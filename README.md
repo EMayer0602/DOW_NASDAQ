@@ -1,169 +1,209 @@
-# DOW_NASDAQ - Supertrend Stock Trading Bot
+# DOW/NASDAQ Stock Trading Bot
 
-## Overview
-Paper trading system for DOW 30 and NASDAQ 100 stocks using Supertrend strategy.
-Adapted from Crypto9 for use with Interactive Brokers (IB).
+Supertrend-basierter Trading Bot für US-Aktien (DOW 30 & NASDAQ 100) mit Interactive Brokers Integration.
 
 ## Features
-- Supertrend-based entry/exit signals
-- Time-based exits with optimized hold periods per symbol
-- Trend flip exits
-- Long-only mode (stocks are harder to short)
-- Interactive Brokers integration for paper/live trading
-- Yahoo Finance fallback for data (simulation mode)
 
----
+- **Supertrend-Strategie**: Trend-folgende Signale mit ATR-basierter Volatilitätsanpassung
+- **Long & Short**: Unterstützt beide Richtungen (Short erfordert Margin-Konto)
+- **Zeitbasierte Exits**: Optimierte Haltezeiten pro Symbol
+- **IB Integration**: Paper Trading und Live Trading mit Interactive Brokers
+- **Yahoo Finance Fallback**: Automatischer Fallback für Daten
+- **Backtesting**: Vollständiges Backtesting-Framework
+- **Parameter-Optimierung**: Grid-Search für optimale Parameter
+- **Performance-Analyse**: Detaillierte Statistiken und Reports
 
-## Prerequisites
+## Installation
 
-### Python Dependencies
 ```bash
-pip install pandas numpy yfinance ib_insync pytz
+# Repository klonen
+git clone https://github.com/EMayer0602/DOW_NASDAQ.git
+cd DOW_NASDAQ
+
+# Dependencies installieren
+pip install pandas numpy yfinance pytz
+
+# Für IB Trading
+pip install ib_insync
+
+# Für Charts
+pip install matplotlib
 ```
 
-### For IB Trading
-1. Install **TWS (Trader Workstation)** or **IB Gateway**
-2. Enable API in TWS settings:
-   - File → Global Configuration → API → Settings
-   - Enable "ActiveX and Socket Clients"
-   - Port: 7497 (paper) or 7496 (live)
-3. For paper trading, use a Paper Trading account in TWS
+## Schnellstart
 
----
+### 1. Simulation mit Yahoo Finance (ohne IB)
 
-## Quick Start
-
-### 1) Simulation Mode (No IB Required)
-Test with Yahoo Finance data:
 ```bash
-python stock_paper_trader.py --symbols AAPL MSFT NVDA AMZN GOOGL
+python stock_paper_trader.py
 ```
 
-Or use the batch file:
+### 2. IB Paper Trading
+
+1. TWS oder IB Gateway starten
+2. API-Verbindungen aktivieren (Port 7497 für Paper)
+3. Bot starten:
+
 ```bash
-run_stock_trader.bat
+python stock_paper_trader.py --ib
 ```
 
-### 2) IB Paper Trading
-Connect to TWS Paper Trading:
-```bash
-python stock_paper_trader.py --ib --symbols AAPL MSFT NVDA
-```
+### 3. Kontinuierliches Trading
 
-Run continuously (1 hour intervals):
 ```bash
 python stock_paper_trader.py --ib --loop --interval 3600
 ```
 
-Or use the batch file:
+## Backtesting
+
+### Einfaches Backtest
+
 ```bash
-run_ib_paper.bat
+python backtester.py
 ```
 
-### 3) IB Live Trading (CAREFUL!)
+### Mit spezifischen Symbolen
+
 ```bash
-python stock_paper_trader.py --ib --live --symbols AAPL MSFT
+python backtester.py --symbols AAPL MSFT NVDA --period 1y
 ```
 
----
+### Ergebnisse speichern
 
-## Configuration Files
-
-### stock_symbols.py
-Contains DOW 30 and NASDAQ 100 stock lists:
-```python
-DOW_30 = ["AAPL", "MSFT", "JNJ", ...]
-NASDAQ_100_TOP = ["NVDA", "TSLA", "AMZN", ...]
-DEFAULT_TRADING_SYMBOLS = ["AAPL", "MSFT", "NVDA", ...]
+```bash
+python backtester.py --output results.csv --trades trades.csv
 ```
+
+## Parameter-Optimierung
+
+### Standard-Sweep
+
+```bash
+python parameter_sweep.py
+```
+
+### Schneller Sweep
+
+```bash
+python parameter_sweep.py --quick
+```
+
+### Gründlicher Sweep
+
+```bash
+python parameter_sweep.py --thorough
+```
+
+## Performance-Analyse
+
+```bash
+python performance_analyzer.py --trades trades.csv --plot
+```
+
+## Konfiguration
 
 ### stock_settings.py
-Trading parameters:
-```python
-START_TOTAL_CAPITAL = 100_000.0
-MAX_OPEN_POSITIONS = 10
-POSITION_SIZE_USD = 10_000.0
-TIMEFRAME = "1h"
-```
 
-### optimal_hold_times_defaults.py
-Symbol-specific hold periods (1h bars):
-```python
-OPTIMAL_HOLD_BARS = {
-    ("NVDA", "long"): 5,  # High volatility - shorter hold
-    ("AAPL", "long"): 6,  # Large cap - medium hold
-    ("KO", "long"): 8,    # Stable - longer hold
-}
-```
+| Parameter | Default | Beschreibung |
+|-----------|---------|--------------|
+| `START_TOTAL_CAPITAL` | 100,000 | Startkapital in USD |
+| `MAX_OPEN_POSITIONS` | 10 | Maximale gleichzeitige Positionen |
+| `MAX_LONG_POSITIONS` | 10 | Maximale Long-Positionen |
+| `MAX_SHORT_POSITIONS` | 5 | Maximale Short-Positionen |
+| `POSITION_SIZE_USD` | 10,000 | Positionsgröße pro Trade |
+| `TIMEFRAME` | "1h" | Trading-Timeframe |
+| `DEFAULT_ATR_PERIOD` | 10 | ATR-Periode für Supertrend |
+| `DEFAULT_ATR_MULTIPLIER` | 3.0 | ATR-Multiplikator |
+| `USE_TIME_BASED_EXIT` | True | Zeitbasierte Exits aktivieren |
+| `RESPECT_MARKET_HOURS` | True | Nur während Marktzeiten handeln |
 
-### report_stocks/best_params_overall.csv
-Supertrend parameters per symbol:
-- ATR Period (ParamA): 7-14
-- ATR Multiplier (ParamB): 2.0-3.5
-- Min Hold Bars (MinHoldBars): 4-8
+### stock_symbols.py
 
----
+Enthält DOW 30 und NASDAQ 100 Symbole. Default-Symbole:
+- AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, JPM, V, HD
 
-## Trading Logic
+## Dateistruktur
 
-### Entry Signal
-- Price crosses **above** Supertrend → LONG entry
-- Long-only mode (shorts disabled)
-
-### Exit Signals
-1. **Time-based Exit**: After `optimal_hold_bars` bars
-2. **Trend Flip Exit**: Price crosses below Supertrend
-
-### Position Sizing
-- Fixed $10,000 per position
-- Maximum 10 open positions
-- Starting capital: $100,000
-
----
-
-## File Structure
 ```
 DOW_NASDAQ/
-├── stock_paper_trader.py     # Main trading script
-├── ib_connector.py           # Interactive Brokers connection
-├── stock_symbols.py          # DOW/NASDAQ symbol lists
-├── stock_settings.py         # Trading configuration
-├── optimal_hold_times_defaults.py  # Hold periods per symbol
-├── report_stocks/
-│   └── best_params_overall.csv     # Supertrend parameters
-├── run_stock_trader.bat      # Simulation mode launcher
-├── run_ib_paper.bat          # IB paper trading launcher
-└── stock_trading_state.json  # Portfolio state (auto-created)
+├── stock_paper_trader.py      # Haupt-Trading-Script
+├── ib_connector.py            # IB Verbindungsmodul
+├── stock_settings.py          # Konfiguration
+├── stock_symbols.py           # Symbollisten
+├── optimal_hold_times_defaults.py  # Haltezeiten
+├── backtester.py              # Backtesting-Engine
+├── parameter_sweep.py         # Parameter-Optimierung
+├── performance_analyzer.py    # Performance-Analyse
+├── ta/                        # Technische Analyse Module
+│   ├── __init__.py
+│   └── volatility.py
+└── report_stocks/             # Output-Verzeichnis
+    └── best_params_overall.csv
 ```
 
----
+## IB Setup
 
-## IB Connection Ports
-| Mode | TWS Port | Gateway Port |
-|------|----------|--------------|
+### TWS Einstellungen
+
+1. TWS öffnen → Configure → API → Settings
+2. "Enable ActiveX and Socket Clients" aktivieren
+3. "Read-Only API" deaktivieren (für Trading)
+4. Port: 7497 (Paper) oder 7496 (Live)
+5. Trusted IP: 127.0.0.1
+
+### Ports
+
+| Modus | TWS Port | Gateway Port |
+|-------|----------|--------------|
 | Paper | 7497 | 4002 |
 | Live | 7496 | 4001 |
 
----
+## Trading-Logik
 
-## Market Hours
-- US Market: 9:30 AM - 4:00 PM Eastern
-- Pre-market: 4:00 AM - 9:30 AM
-- After-hours: 4:00 PM - 8:00 PM
+### Entry Signale
+- **LONG**: Preis kreuzt über Supertrend
+- **SHORT**: Preis kreuzt unter Supertrend
 
-The bot respects market hours by default (`RESPECT_MARKET_HOURS = True`).
+### Exit Signale
+1. **Zeit-Exit**: Nach `optimal_hold_bars` Bars
+2. **Trend-Flip**: Preis kreuzt Supertrend in Gegenrichtung
 
----
+### Position Sizing
+- Feste $10,000 pro Position
+- Maximal 10 offene Positionen (10 Long + 5 Short)
+- Startkapital: $100,000
 
-## Original Crypto Version
-The original Crypto9 trading bot files are still available:
-- `paper_trader.py` - Crypto paper trader
-- `Supertrend_5Min.py` - Crypto Supertrend logic
-- `report_html/` - Crypto parameters
+## Beispiel-Workflow
 
----
+```bash
+# 1. Parameter optimieren
+python parameter_sweep.py --thorough --output report_stocks/best_params_overall.csv
 
-## Disclaimer
-This software is for educational and paper trading purposes only.
-Trading stocks involves risk. Always test thoroughly in paper trading mode
-before using real money. The authors are not responsible for any losses.
+# 2. Backtest mit optimierten Parametern
+python backtester.py --output report_stocks/results.csv --trades report_stocks/trades.csv
+
+# 3. Performance analysieren
+python performance_analyzer.py --trades report_stocks/trades.csv --save-plot report_stocks/equity.png
+
+# 4. Paper Trading starten
+python stock_paper_trader.py --ib --loop
+```
+
+## Marktzeiten
+
+- US Market: 9:30 - 16:00 Eastern
+- Pre-Market: 4:00 - 9:30 Eastern
+- After-Hours: 16:00 - 20:00 Eastern
+
+Der Bot respektiert Marktzeiten standardmäßig (`RESPECT_MARKET_HOURS = True`).
+
+## Risiko-Hinweise
+
+- **Paper Trading zuerst**: Immer erst im Paper-Modus testen
+- **Margin für Shorts**: Short-Positionen erfordern ein Margin-Konto
+- **Marktrisiko**: Vergangene Performance ist keine Garantie für zukünftige Ergebnisse
+- **Live Trading**: `--live` Flag nur mit Bedacht verwenden
+
+## Lizenz
+
+MIT License

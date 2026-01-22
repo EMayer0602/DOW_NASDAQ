@@ -2,13 +2,13 @@
 
 ## Overview
 Paper trading system for DOW 30 and NASDAQ 100 stocks using Supertrend strategy.
-Adapted from Crypto9 for use with Interactive Brokers (IB).
+Designed for Interactive Brokers (IB) paper and live trading.
 
 ## Features
 - Supertrend-based entry/exit signals
 - Time-based exits with optimized hold periods per symbol
 - Trend flip exits
-- Long-only mode (stocks are harder to short)
+- Long-only mode
 - Interactive Brokers integration for paper/live trading
 - Yahoo Finance fallback for data (simulation mode)
 
@@ -63,6 +63,46 @@ run_ib_paper.bat
 ### 3) IB Live Trading (CAREFUL!)
 ```bash
 python stock_paper_trader.py --ib --live --symbols AAPL MSFT
+```
+
+---
+
+## Stock Paper Trader - Alle Optionen
+
+### Kommandozeilen-Optionen
+
+| Option | Beschreibung | Standard |
+|--------|--------------|----------|
+| `--ib` | Interactive Brokers verwenden | Aus (yfinance) |
+| `--live` | Live-Trading (statt Paper) | Paper |
+| `--symbols SYM1 SYM2 ...` | Zu handelnde Symbole | DEFAULT_TRADING_SYMBOLS |
+| `--loop` | Kontinuierlicher Modus | Aus |
+| `--interval N` | Loop-Intervall in Sekunden | 3600 (1 Stunde) |
+| `--state FILE` | State-Datei Pfad | stock_trading_state.json |
+
+### Beispiele
+
+```bash
+# Simulation mit yfinance (kein IB nötig)
+python stock_paper_trader.py --symbols AAPL MSFT NVDA
+
+# IB Paper Trading - einmaliger Durchlauf
+python stock_paper_trader.py --ib --symbols AAPL MSFT NVDA
+
+# IB Paper Trading - kontinuierlich alle 30 Minuten
+python stock_paper_trader.py --ib --loop --interval 1800
+
+# IB Paper Trading - kontinuierlich jede Stunde
+python stock_paper_trader.py --ib --loop --interval 3600
+
+# IB Paper Trading - alle DOW 30 Aktien
+python stock_paper_trader.py --ib --symbols AAPL MSFT JNJ JPM V HD CAT BA GS HON
+
+# IB LIVE Trading (VORSICHT!)
+python stock_paper_trader.py --ib --live --symbols AAPL MSFT
+
+# Eigene State-Datei verwenden
+python stock_paper_trader.py --ib --state my_portfolio.json
 ```
 
 ---
@@ -124,21 +164,23 @@ Supertrend parameters per symbol:
 ## File Structure
 ```
 DOW_NASDAQ/
-├── stock_paper_trader.py     # Main trading script
-├── ib_connector.py           # Interactive Brokers connection
-├── stock_symbols.py          # DOW/NASDAQ symbol lists
-├── stock_settings.py         # Trading configuration
-├── optimal_hold_times_defaults.py  # Hold periods per symbol
+├── stock_paper_trader.py         # Main trading script
+├── ib_connector.py               # Interactive Brokers connection
+├── stock_symbols.py              # DOW/NASDAQ symbol lists
+├── stock_settings.py             # Trading configuration
+├── optimal_hold_times_defaults.py # Hold periods per symbol
 ├── report_stocks/
-│   └── best_params_overall.csv     # Supertrend parameters
-├── run_stock_trader.bat      # Simulation mode launcher
-├── run_ib_paper.bat          # IB paper trading launcher
-└── stock_trading_state.json  # Portfolio state (auto-created)
+│   └── best_params_overall.csv   # Supertrend parameters
+├── run_stock_trader.bat          # Simulation mode launcher
+├── run_ib_paper.bat              # IB paper trading launcher
+├── ta/                           # Technical analysis library
+└── stock_trading_state.json      # Portfolio state (auto-created)
 ```
 
 ---
 
 ## IB Connection Ports
+
 | Mode | TWS Port | Gateway Port |
 |------|----------|--------------|
 | Paper | 7497 | 4002 |
@@ -155,151 +197,12 @@ The bot respects market hours by default (`RESPECT_MARKET_HOURS = True`).
 
 ---
 
-## Dashboard (TestnetDashboard.py)
-
-Das Dashboard zeigt alle offenen Positionen, geschlossene Trades und Performance-Statistiken in einer HTML-Übersicht.
-
-### Dashboard starten
-
-**Einmalig generieren:**
-```bash
-python TestnetDashboard.py
-```
-
-**Kontinuierlich aktualisieren (alle 30 Sekunden):**
-```bash
-python TestnetDashboard.py --loop
-```
-
-**Mit benutzerdefiniertem Intervall (z.B. 60 Sekunden):**
-```bash
-python TestnetDashboard.py --loop --interval 60
-```
-
-### Dashboard Optionen
-
-| Option | Beschreibung | Standard |
-|--------|--------------|----------|
-| `--loop` | Kontinuierlicher Modus - aktualisiert automatisch | Aus |
-| `--interval N` | Aktualisierungsintervall in Sekunden | 30 |
-
-### Dashboard Ausgabe
-
-Das Dashboard generiert `report_testnet/dashboard.html` mit:
-- **Open Positions**: Aktuelle offene Trades mit Echtzeit-Preisen
-- **Closed Trades**: Alle geschlossenen Trades mit PnL
-- **Performance Summary**: Win Rate, Total PnL, Equity Curve
-- **Symbol Statistics**: Performance pro Symbol
-
-### Beispiele
-
-```bash
-# Dashboard einmal generieren und im Browser öffnen
-python TestnetDashboard.py
-start report_testnet\dashboard.html
-
-# Dashboard alle 60 Sekunden aktualisieren
-python TestnetDashboard.py --loop --interval 60
-
-# Dashboard alle 5 Minuten aktualisieren
-python TestnetDashboard.py --loop --interval 300
-```
-
----
-
-## Stock Paper Trader - Alle Optionen
-
-### Kommandozeilen-Optionen
-
-| Option | Beschreibung | Standard |
-|--------|--------------|----------|
-| `--ib` | Interactive Brokers verwenden | Aus (yfinance) |
-| `--live` | Live-Trading (statt Paper) | Paper |
-| `--symbols SYM1 SYM2 ...` | Zu handelnde Symbole | DEFAULT_TRADING_SYMBOLS |
-| `--loop` | Kontinuierlicher Modus | Aus |
-| `--interval N` | Loop-Intervall in Sekunden | 3600 (1 Stunde) |
-| `--state FILE` | State-Datei Pfad | stock_trading_state.json |
-
-### Beispiele
-
-```bash
-# Simulation mit yfinance (kein IB nötig)
-python stock_paper_trader.py --symbols AAPL MSFT NVDA
-
-# IB Paper Trading - einmaliger Durchlauf
-python stock_paper_trader.py --ib --symbols AAPL MSFT NVDA
-
-# IB Paper Trading - kontinuierlich alle 30 Minuten
-python stock_paper_trader.py --ib --loop --interval 1800
-
-# IB Paper Trading - kontinuierlich jede Stunde
-python stock_paper_trader.py --ib --loop --interval 3600
-
-# IB Paper Trading - alle DOW 30 Aktien
-python stock_paper_trader.py --ib --symbols AAPL MSFT JNJ JPM V HD CAT BA GS HON
-
-# IB LIVE Trading (VORSICHT!)
-python stock_paper_trader.py --ib --live --symbols AAPL MSFT
-
-# Eigene State-Datei verwenden
-python stock_paper_trader.py --ib --state my_portfolio.json
-```
-
----
-
-## Crypto Paper Trader (paper_trader.py) - Alle Optionen
-
-Der originale Crypto-Trader für Binance:
-
-| Option | Beschreibung | Standard |
-|--------|--------------|----------|
-| `--simulate` | Historische Simulation | Aus |
-| `--start DATETIME` | Startzeit für Simulation | 24h zurück |
-| `--end DATETIME` | Endzeit für Simulation | Jetzt |
-| `--symbols "SYM1,SYM2"` | Zu handelnde Symbole | Aus Config |
-| `--testnet` | Binance Testnet verwenden | Aus |
-| `--max-positions N` | Max. offene Positionen | 10 |
-| `--loop` | Kontinuierlicher Modus | Aus |
-| `--interval N` | Loop-Intervall in Sekunden | 1800 |
-
-### Crypto Beispiele
-
-```bash
-# Live-Tick (einmaliger Durchlauf)
-python paper_trader.py
-
-# Historische Simulation letzte 24h
-python paper_trader.py --simulate
-
-# Simulation ab bestimmtem Datum
-python paper_trader.py --simulate --start 2025-01-01
-
-# Binance Testnet mit Loop
-python paper_trader.py --testnet --loop --interval 1800
-
-# Bestimmte Symbole
-python paper_trader.py --symbols "BTC/USDC,ETH/USDC,SOL/USDC"
-```
-
----
-
-## Batch-Dateien
+## Batch Files
 
 | Datei | Beschreibung |
 |-------|--------------|
 | `run_stock_trader.bat` | Stock Simulation (yfinance) |
 | `run_ib_paper.bat` | IB Paper Trading (Loop) |
-| `run_paper_trader.bat` | Crypto Paper Trading |
-| `run_live_trader.bat` | Crypto Live Trading |
-| `run_full_refresh.bat` | Alle Reports neu generieren |
-
----
-
-## Original Crypto Version
-The original Crypto9 trading bot files are still available:
-- `paper_trader.py` - Crypto paper trader
-- `Supertrend_5Min.py` - Crypto Supertrend logic
-- `report_html/` - Crypto parameters
 
 ---
 

@@ -24,19 +24,10 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
-report_testnet/
 
-# Generated data files
-ohlcv_cache/
-# Keep report_stocks but ignore report_html (crypto)
-report_html/
-paper_trading_state.json
-paper_trading_log.csv
-paper_trading_simulation_*.csv
-paper_trading_simulation_*.json
-paper_trading_actual_*.csv
-paper_trading_actual_*.json
+# Trading state files (auto-generated)
+stock_trading_state.json
 *.log
 
-# Testnet tracking files
-crypto9_testnet_*.json
+# Keep report_stocks
+!report_stocks/

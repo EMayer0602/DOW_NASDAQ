@@ -155,6 +155,146 @@ The bot respects market hours by default (`RESPECT_MARKET_HOURS = True`).
 
 ---
 
+## Dashboard (TestnetDashboard.py)
+
+Das Dashboard zeigt alle offenen Positionen, geschlossene Trades und Performance-Statistiken in einer HTML-Übersicht.
+
+### Dashboard starten
+
+**Einmalig generieren:**
+```bash
+python TestnetDashboard.py
+```
+
+**Kontinuierlich aktualisieren (alle 30 Sekunden):**
+```bash
+python TestnetDashboard.py --loop
+```
+
+**Mit benutzerdefiniertem Intervall (z.B. 60 Sekunden):**
+```bash
+python TestnetDashboard.py --loop --interval 60
+```
+
+### Dashboard Optionen
+
+| Option | Beschreibung | Standard |
+|--------|--------------|----------|
+| `--loop` | Kontinuierlicher Modus - aktualisiert automatisch | Aus |
+| `--interval N` | Aktualisierungsintervall in Sekunden | 30 |
+
+### Dashboard Ausgabe
+
+Das Dashboard generiert `report_testnet/dashboard.html` mit:
+- **Open Positions**: Aktuelle offene Trades mit Echtzeit-Preisen
+- **Closed Trades**: Alle geschlossenen Trades mit PnL
+- **Performance Summary**: Win Rate, Total PnL, Equity Curve
+- **Symbol Statistics**: Performance pro Symbol
+
+### Beispiele
+
+```bash
+# Dashboard einmal generieren und im Browser öffnen
+python TestnetDashboard.py
+start report_testnet\dashboard.html
+
+# Dashboard alle 60 Sekunden aktualisieren
+python TestnetDashboard.py --loop --interval 60
+
+# Dashboard alle 5 Minuten aktualisieren
+python TestnetDashboard.py --loop --interval 300
+```
+
+---
+
+## Stock Paper Trader - Alle Optionen
+
+### Kommandozeilen-Optionen
+
+| Option | Beschreibung | Standard |
+|--------|--------------|----------|
+| `--ib` | Interactive Brokers verwenden | Aus (yfinance) |
+| `--live` | Live-Trading (statt Paper) | Paper |
+| `--symbols SYM1 SYM2 ...` | Zu handelnde Symbole | DEFAULT_TRADING_SYMBOLS |
+| `--loop` | Kontinuierlicher Modus | Aus |
+| `--interval N` | Loop-Intervall in Sekunden | 3600 (1 Stunde) |
+| `--state FILE` | State-Datei Pfad | stock_trading_state.json |
+
+### Beispiele
+
+```bash
+# Simulation mit yfinance (kein IB nötig)
+python stock_paper_trader.py --symbols AAPL MSFT NVDA
+
+# IB Paper Trading - einmaliger Durchlauf
+python stock_paper_trader.py --ib --symbols AAPL MSFT NVDA
+
+# IB Paper Trading - kontinuierlich alle 30 Minuten
+python stock_paper_trader.py --ib --loop --interval 1800
+
+# IB Paper Trading - kontinuierlich jede Stunde
+python stock_paper_trader.py --ib --loop --interval 3600
+
+# IB Paper Trading - alle DOW 30 Aktien
+python stock_paper_trader.py --ib --symbols AAPL MSFT JNJ JPM V HD CAT BA GS HON
+
+# IB LIVE Trading (VORSICHT!)
+python stock_paper_trader.py --ib --live --symbols AAPL MSFT
+
+# Eigene State-Datei verwenden
+python stock_paper_trader.py --ib --state my_portfolio.json
+```
+
+---
+
+## Crypto Paper Trader (paper_trader.py) - Alle Optionen
+
+Der originale Crypto-Trader für Binance:
+
+| Option | Beschreibung | Standard |
+|--------|--------------|----------|
+| `--simulate` | Historische Simulation | Aus |
+| `--start DATETIME` | Startzeit für Simulation | 24h zurück |
+| `--end DATETIME` | Endzeit für Simulation | Jetzt |
+| `--symbols "SYM1,SYM2"` | Zu handelnde Symbole | Aus Config |
+| `--testnet` | Binance Testnet verwenden | Aus |
+| `--max-positions N` | Max. offene Positionen | 10 |
+| `--loop` | Kontinuierlicher Modus | Aus |
+| `--interval N` | Loop-Intervall in Sekunden | 1800 |
+
+### Crypto Beispiele
+
+```bash
+# Live-Tick (einmaliger Durchlauf)
+python paper_trader.py
+
+# Historische Simulation letzte 24h
+python paper_trader.py --simulate
+
+# Simulation ab bestimmtem Datum
+python paper_trader.py --simulate --start 2025-01-01
+
+# Binance Testnet mit Loop
+python paper_trader.py --testnet --loop --interval 1800
+
+# Bestimmte Symbole
+python paper_trader.py --symbols "BTC/USDC,ETH/USDC,SOL/USDC"
+```
+
+---
+
+## Batch-Dateien
+
+| Datei | Beschreibung |
+|-------|--------------|
+| `run_stock_trader.bat` | Stock Simulation (yfinance) |
+| `run_ib_paper.bat` | IB Paper Trading (Loop) |
+| `run_paper_trader.bat` | Crypto Paper Trading |
+| `run_live_trader.bat` | Crypto Live Trading |
+| `run_full_refresh.bat` | Alle Reports neu generieren |
+
+---
+
 ## Original Crypto Version
 The original Crypto9 trading bot files are still available:
 - `paper_trader.py` - Crypto paper trader

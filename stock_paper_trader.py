@@ -43,7 +43,7 @@ except ImportError:
 from stock_settings import (
     SYMBOLS, TIMEFRAME, HTF_TIMEFRAME,
     START_TOTAL_CAPITAL, MAX_OPEN_POSITIONS, STAKE_DIVISOR,
-    MAX_LONG_POSITIONS, POSITION_SIZE_USD,
+    MAX_LONG_POSITIONS, MAX_SHORT_POSITIONS, POSITION_SIZE_USD,
     USE_TIME_BASED_EXIT, DISABLE_TREND_FLIP_EXIT,
     REPORT_DIR, BEST_PARAMS_CSV,
     get_bars_per_day, is_market_open, RESPECT_MARKET_HOURS
@@ -218,9 +218,9 @@ def detect_signal(df: pd.DataFrame, symbol: str) -> Optional[str]:
     if close_prev <= st_prev and close_now > st_now:
         return "long"
 
-    # Short signal: price crosses below Supertrend (disabled for long-only)
-    # if close_prev >= st_prev and close_now < st_now:
-    #     return "short"
+    # Short signal: price crosses below Supertrend
+    if close_prev >= st_prev and close_now < st_now:
+        return "short"
 
     return None
 
@@ -271,11 +271,22 @@ class StockPortfolio:
     def get_position_count(self) -> int:
         return len(self.positions)
 
+    def get_long_count(self) -> int:
+        return sum(1 for p in self.positions.values() if p['direction'] == 'long')
+
+    def get_short_count(self) -> int:
+        return sum(1 for p in self.positions.values() if p['direction'] == 'short')
+
     def has_position(self, symbol: str) -> bool:
         return symbol in self.positions
 
-    def can_open_position(self) -> bool:
-        return self.get_position_count() < MAX_OPEN_POSITIONS
+    def can_open_position(self, direction: str = "long") -> bool:
+        if self.get_position_count() >= MAX_OPEN_POSITIONS:
+            return False
+        if direction == "long":
+            return self.get_long_count() < MAX_LONG_POSITIONS
+        else:
+            return self.get_short_count() < MAX_SHORT_POSITIONS
 
     def get_stake(self) -> float:
         """Calculate stake for new position."""
@@ -506,13 +517,18 @@ def run_trading_cycle(symbols: List[str], connector: Optional[IBConnector] = Non
                     portfolio.close_position(symbol, exit_price, now, reason)
 
             # Check for new entry
-            elif portfolio.can_open_position():
+            else:
                 signal = detect_signal(df, symbol)
-                if signal == "long":
+                if signal == "long" and portfolio.can_open_position("long"):
                     stake = portfolio.get_stake()
                     shares = int(stake / current_price)
                     if shares > 0:
                         portfolio.open_position(symbol, "long", current_price, shares, now)
+                elif signal == "short" and portfolio.can_open_position("short"):
+                    stake = portfolio.get_stake()
+                    shares = int(stake / current_price)
+                    if shares > 0:
+                        portfolio.open_position(symbol, "short", current_price, shares, now)
 
         except Exception as e:
             print(f"[{symbol}] Error: {e}")

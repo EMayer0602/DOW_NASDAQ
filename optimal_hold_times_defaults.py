@@ -97,6 +97,23 @@ OPTIMAL_HOLD_BARS = {
     ("WDAY", "long"): 5,
     ("KDP", "long"): 7,
     ("DXCM", "long"): 5,
+
+    # === SHORT POSITIONS ===
+    # Generally shorter hold times for shorts (mean reversion)
+    ("NVDA", "short"): 3,
+    ("TSLA", "short"): 3,
+    ("AMD", "short"): 3,
+    ("META", "short"): 4,
+    ("AAPL", "short"): 4,
+    ("MSFT", "short"): 4,
+    ("GOOGL", "short"): 4,
+    ("GOOG", "short"): 4,
+    ("AMZN", "short"): 4,
+    ("V", "short"): 5,
+    ("JPM", "short"): 5,
+    ("HD", "short"): 5,
+    ("NFLX", "short"): 3,
+    ("PYPL", "short"): 3,
 }
 
 # Default if symbol not in dictionary

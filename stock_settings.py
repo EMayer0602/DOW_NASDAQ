@@ -56,7 +56,7 @@ START_TOTAL_CAPITAL = 100_000.0  # Starting capital for stocks
 MAX_OPEN_POSITIONS = 10
 STAKE_DIVISOR = 10  # stake = capital / divisor
 MAX_LONG_POSITIONS = 10
-MAX_SHORT_POSITIONS = 0  # Long only (stocks harder to short)
+MAX_SHORT_POSITIONS = 5  # Allow short positions (requires margin account)
 POSITION_SIZE_USD = 10_000.0  # Fixed position size per trade
 
 # ============================================

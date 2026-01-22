@@ -1,0 +1,3 @@
+symbol,direction,indicator,htf,entry_time,entry_price,stake,param_a,param_b,atr_mult,min_hold_bars,last_price,bars_held,unrealized_pct,unrealized_pnl,status
+XRP/EUR,long,jma,6h,2025-12-13T17:00:00+01:00,1.7361,1000.0,30.0,0.0,,24,1.6949,31,-2.373135188065198,-23.731351880651978,Verlust
+TNSR/USDC,long,jma,12h,2025-12-14T00:00:00+01:00,0.103,1000.0,20.0,50.0,,24,0.0973,24,-5.533980582524269,-55.33980582524269,Verlust

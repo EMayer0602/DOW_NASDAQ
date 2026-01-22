@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Environment
+.env
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+report_testnet/
+
+# Generated data files
+ohlcv_cache/
+# Keep report_stocks but ignore report_html (crypto)
+report_html/
+paper_trading_state.json
+paper_trading_log.csv
+paper_trading_simulation_*.csv
+paper_trading_simulation_*.json
+paper_trading_actual_*.csv
+paper_trading_actual_*.json
+*.log
+
+# Testnet tracking files
+crypto9_testnet_*.json

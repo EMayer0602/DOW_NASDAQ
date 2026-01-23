@@ -29,13 +29,55 @@ except ImportError:
     YFINANCE_AVAILABLE = False
     print("WARNING: yfinance not installed. Run: pip install yfinance")
 
+import os
+
 from stock_settings import (
     SYMBOLS, TIMEFRAME, START_TOTAL_CAPITAL,
     MAX_OPEN_POSITIONS, MAX_LONG_POSITIONS, MAX_SHORT_POSITIONS,
     POSITION_SIZE_USD, USE_TIME_BASED_EXIT, DISABLE_TREND_FLIP_EXIT,
-    DEFAULT_ATR_PERIOD, DEFAULT_ATR_MULTIPLIER
+    DEFAULT_ATR_PERIOD, DEFAULT_ATR_MULTIPLIER, BEST_PARAMS_CSV
 )
 from optimal_hold_times_defaults import get_optimal_hold_bars
+
+
+# ============================================
+# OPTIMIZED PARAMETERS LOADER
+# ============================================
+def load_optimized_params(filepath: str = None) -> Dict[str, Tuple[int, float]]:
+    """
+    Load optimized parameters from CSV file.
+    Returns dict: {symbol: (atr_period, atr_multiplier)}
+    """
+    if filepath is None:
+        filepath = BEST_PARAMS_CSV
+
+    params = {}
+
+    if not os.path.exists(filepath):
+        return params
+
+    try:
+        # Try semicolon separator first (parameter_sweep format)
+        df = pd.read_csv(filepath, sep=';')
+        if 'ParamA' not in df.columns:
+            # Try comma separator
+            df = pd.read_csv(filepath, sep=',')
+
+        for _, row in df.iterrows():
+            symbol = row['Symbol']
+            atr_period = int(row['ParamA'])
+            atr_mult = float(row['ParamB'])
+            params[symbol] = (atr_period, atr_mult)
+
+        print(f"Loaded optimized params for {len(params)} symbols from {filepath}")
+    except Exception as e:
+        print(f"Could not load optimized params: {e}")
+
+    return params
+
+
+# Global cache for optimized params
+_OPTIMIZED_PARAMS: Dict[str, Tuple[int, float]] = {}
 
 
 # ============================================
@@ -456,11 +498,27 @@ def run_multi_symbol_backtest(
     symbols: List[str],
     period: str = "1y",
     interval: str = "1h",
+    use_optimized_params: bool = True,
+    params_file: str = None,
     **kwargs
 ) -> Dict[str, BacktestResult]:
-    """Run backtest on multiple symbols."""
+    """
+    Run backtest on multiple symbols.
+
+    Args:
+        symbols: List of symbols to backtest
+        period: Historical data period
+        interval: Bar interval
+        use_optimized_params: If True, load params from CSV file per symbol
+        params_file: Path to optimized params CSV (default: BEST_PARAMS_CSV)
+        **kwargs: Additional Backtester arguments
+    """
     results = {}
-    backtester = Backtester(**kwargs)
+
+    # Load optimized parameters if requested
+    optimized_params = {}
+    if use_optimized_params:
+        optimized_params = load_optimized_params(params_file)
 
     for symbol in symbols:
         print(f"Backtesting {symbol}...", end=" ", flush=True)
@@ -470,11 +528,22 @@ def run_multi_symbol_backtest(
             print("SKIPPED (insufficient data)")
             continue
 
+        # Use optimized params if available, otherwise use defaults/kwargs
+        bt_kwargs = kwargs.copy()
+        if symbol in optimized_params:
+            atr_period, atr_mult = optimized_params[symbol]
+            bt_kwargs['atr_period'] = atr_period
+            bt_kwargs['atr_multiplier'] = atr_mult
+            param_str = f"ATR({atr_period},{atr_mult})"
+        else:
+            param_str = "default"
+
+        backtester = Backtester(**bt_kwargs)
         result = backtester.run_backtest(symbol, df)
         results[symbol] = result
 
         pnl_str = f"+${result.total_pnl:.2f}" if result.total_pnl >= 0 else f"-${abs(result.total_pnl):.2f}"
-        print(f"{result.total_trades} trades, {result.win_rate:.1f}% win rate, {pnl_str}")
+        print(f"[{param_str}] {result.total_trades} trades, {result.win_rate:.1f}% win rate, {pnl_str}")
 
     return results
 
@@ -573,12 +642,16 @@ def main():
     parser.add_argument('--interval', default='1h', help='Bar interval (1h, 1d)')
     parser.add_argument('--capital', type=float, default=START_TOTAL_CAPITAL, help='Initial capital')
     parser.add_argument('--position-size', type=float, default=POSITION_SIZE_USD, help='Position size USD')
-    parser.add_argument('--atr-period', type=int, default=DEFAULT_ATR_PERIOD, help='ATR period')
-    parser.add_argument('--atr-mult', type=float, default=DEFAULT_ATR_MULTIPLIER, help='ATR multiplier')
+    parser.add_argument('--atr-period', type=int, default=DEFAULT_ATR_PERIOD, help='ATR period (fallback)')
+    parser.add_argument('--atr-mult', type=float, default=DEFAULT_ATR_MULTIPLIER, help='ATR multiplier (fallback)')
     parser.add_argument('--output', default=None, help='Output CSV file for results')
     parser.add_argument('--trades', default=None, help='Output CSV file for trades')
+    parser.add_argument('--no-optimized', action='store_true', help='Disable optimized params, use defaults')
+    parser.add_argument('--params-file', default=None, help='Custom params CSV file')
 
     args = parser.parse_args()
+
+    use_optimized = not args.no_optimized
 
     print("="*60)
     print("STOCK BACKTESTER - DOW/NASDAQ")
@@ -586,13 +659,18 @@ def main():
     print(f"Symbols: {', '.join(args.symbols)}")
     print(f"Period: {args.period}, Interval: {args.interval}")
     print(f"Capital: ${args.capital:,.0f}, Position Size: ${args.position_size:,.0f}")
-    print(f"Supertrend: ATR({args.atr_period}), Multiplier={args.atr_mult}")
+    if use_optimized:
+        print(f"Parameters: OPTIMIZED (from CSV, fallback ATR({args.atr_period}, {args.atr_mult}))")
+    else:
+        print(f"Parameters: FIXED ATR({args.atr_period}), Multiplier={args.atr_mult}")
     print("="*60 + "\n")
 
     results = run_multi_symbol_backtest(
         symbols=args.symbols,
         period=args.period,
         interval=args.interval,
+        use_optimized_params=use_optimized,
+        params_file=args.params_file,
         initial_capital=args.capital,
         position_size=args.position_size,
         atr_period=args.atr_period,

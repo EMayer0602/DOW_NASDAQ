@@ -517,6 +517,20 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
     final_capital = initial_capital + total_pnl
     total_return = (total_pnl / initial_capital) * 100
 
+    # Separate stats for long/short
+    long_pnl = sum(t.pnl for t in long_trades)
+    short_pnl = sum(t.pnl for t in short_trades)
+    long_winners = [t for t in long_trades if t.pnl > 0]
+    long_losers = [t for t in long_trades if t.pnl <= 0]
+    short_winners = [t for t in short_trades if t.pnl > 0]
+    short_losers = [t for t in short_trades if t.pnl <= 0]
+    long_gross_profit = sum(t.pnl for t in long_winners) if long_winners else 0
+    long_gross_loss = abs(sum(t.pnl for t in long_losers)) if long_losers else 1
+    short_gross_profit = sum(t.pnl for t in short_winners) if short_winners else 0
+    short_gross_loss = abs(sum(t.pnl for t in short_losers)) if short_losers else 1
+    long_pf = long_gross_profit / long_gross_loss if long_gross_loss > 0 else 0
+    short_pf = short_gross_profit / short_gross_loss if short_gross_loss > 0 else 0
+
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -690,6 +704,14 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
         }};
         Plotly.newPlot('pnlDistribution', [histTrace], histLayout);
     </script>
+
+    <h2>Statistics Overview</h2>
+    <table>
+        <tr><th>Type</th><th>Trades</th><th>Winners</th><th>Losers</th><th>Win Rate</th><th>P&L</th><th>Profit Factor</th></tr>
+        <tr><td style='text-align:left'><b>Overall</b></td><td>{len(all_trades)}</td><td>{len(winners)}</td><td>{len(losers)}</td><td>{win_rate:.1f}%</td><td class='{'positive' if total_pnl >= 0 else 'negative'}'>${total_pnl:+,.2f}</td><td>{pf:.2f}</td></tr>
+        <tr><td style='text-align:left'><b>Long</b></td><td>{len(long_trades)}</td><td>{len(long_winners)}</td><td>{len(long_losers)}</td><td>{long_win_rate:.1f}%</td><td class='{'positive' if long_pnl >= 0 else 'negative'}'>${long_pnl:+,.2f}</td><td>{long_pf:.2f}</td></tr>
+        <tr><td style='text-align:left'><b>Short</b></td><td>{len(short_trades)}</td><td>{len(short_winners)}</td><td>{len(short_losers)}</td><td>{short_win_rate:.1f}%</td><td class='{'positive' if short_pnl >= 0 else 'negative'}'>${short_pnl:+,.2f}</td><td>{short_pf:.2f}</td></tr>
+    </table>
 
     <h2>Statistics by Symbol</h2>
     <table>
@@ -896,15 +918,12 @@ def main():
 
     print_summary(results, args.capital)
 
-    if args.trades:
-        save_trades_csv(results, args.trades)
+    # Always save trades and generate HTML report
+    trades_file = args.trades or 'trades.csv'
+    save_trades_csv(results, trades_file)
 
-    if args.html:
-        generate_html_report(results, args.html, args.capital)
-    elif args.trades:
-        # Auto-generate HTML
-        html_path = args.trades.replace('.csv', '.html')
-        generate_html_report(results, html_path, args.capital)
+    html_file = args.html or trades_file.replace('.csv', '.html')
+    generate_html_report(results, html_file, args.capital)
 
 
 if __name__ == "__main__":

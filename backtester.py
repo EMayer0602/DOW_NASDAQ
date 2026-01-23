@@ -453,11 +453,11 @@ class Backtester:
 
 
 # ============================================
-# HTML REPORT
+# HTML REPORT WITH PLOTLY CHARTS
 # ============================================
 def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
                          initial_capital: float = DEFAULT_CAPITAL):
-    """Generate HTML report with statistics and trade tables."""
+    """Generate HTML report with Plotly charts and trade tables."""
 
     all_trades = []
     for r in results.values():
@@ -474,9 +474,26 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
     losers = [t for t in all_trades if t.pnl <= 0]
 
     win_rate = len(winners)/len(all_trades)*100 if all_trades else 0
+    long_win_rate = len([t for t in long_trades if t.pnl > 0])/len(long_trades)*100 if long_trades else 0
+    short_win_rate = len([t for t in short_trades if t.pnl > 0])/len(short_trades)*100 if short_trades else 0
     gross_profit = sum(t.pnl for t in winners)
     gross_loss = abs(sum(t.pnl for t in losers))
     pf = gross_profit / gross_loss if gross_loss > 0 else 0
+
+    # Calculate cumulative PnL for equity curve
+    cumulative_pnl = []
+    running_total = initial_capital
+    trade_dates = []
+    for t in all_trades:
+        running_total += t.pnl
+        cumulative_pnl.append(running_total)
+        trade_dates.append(t.exit_time.strftime('%Y-%m-%d %H:%M') if t.exit_time else '')
+
+    # PnL by symbol for bar chart
+    symbol_pnl = {}
+    for t in all_trades:
+        symbol_pnl[t.symbol] = symbol_pnl.get(t.symbol, 0) + t.pnl
+    sorted_symbols = sorted(symbol_pnl.items(), key=lambda x: x[1], reverse=True)
 
     # Statistics by symbol
     symbol_stats = []
@@ -492,10 +509,14 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
                 'PF': f"{r.profit_factor:.2f}"
             })
 
+    final_capital = initial_capital + total_pnl
+    total_return = (total_pnl / initial_capital) * 100
+
     html = f"""<!DOCTYPE html>
 <html>
 <head>
     <title>Backtest Report</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 20px; background: #1a1a2e; color: #eee; }}
         h1, h2, h3 {{ color: #00d4ff; }}
@@ -506,17 +527,21 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
         tr:hover {{ background: #2a2a5a; }}
         .positive {{ color: #00ff88; }}
         .negative {{ color: #ff4466; }}
-        .summary {{ background: #16213e; padding: 20px; border-radius: 10px; margin: 20px 0; }}
-        .stat-box {{ display: inline-block; margin: 10px 20px; text-align: center; }}
+        .summary {{ background: #16213e; padding: 20px; border-radius: 10px; margin: 20px 0; display: flex; flex-wrap: wrap; justify-content: space-around; }}
+        .stat-box {{ margin: 10px 15px; text-align: center; min-width: 100px; }}
         .stat-value {{ font-size: 24px; font-weight: bold; }}
         .stat-label {{ font-size: 12px; color: #888; }}
+        .chart-container {{ background: #16213e; border-radius: 10px; padding: 15px; margin: 20px 0; }}
+        .charts-row {{ display: flex; flex-wrap: wrap; gap: 20px; }}
+        .chart-half {{ flex: 1; min-width: 400px; }}
         details {{ margin: 10px 0; }}
-        summary {{ cursor: pointer; padding: 10px; background: #16213e; border-radius: 5px; }}
+        summary {{ cursor: pointer; padding: 10px; background: #16213e; border-radius: 5px; font-size: 16px; }}
         summary:hover {{ background: #1f1f5f; }}
     </style>
 </head>
 <body>
     <h1>Backtest Report</h1>
+    <p style="color:#888">Period: {all_trades[0].entry_time.strftime('%Y-%m-%d') if all_trades else 'N/A'} to {all_trades[-1].exit_time.strftime('%Y-%m-%d') if all_trades else 'N/A'}</p>
 
     <div class="summary">
         <div class="stat-box">
@@ -524,8 +549,16 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
             <div class="stat-label">Initial Capital</div>
         </div>
         <div class="stat-box">
+            <div class="stat-value">${final_capital:,.0f}</div>
+            <div class="stat-label">Final Capital</div>
+        </div>
+        <div class="stat-box">
             <div class="stat-value {'positive' if total_pnl >= 0 else 'negative'}">${total_pnl:+,.2f}</div>
             <div class="stat-label">Total P&L</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value {'positive' if total_return >= 0 else 'negative'}">{total_return:+.1f}%</div>
+            <div class="stat-label">Return</div>
         </div>
         <div class="stat-box">
             <div class="stat-value">{len(all_trades)}</div>
@@ -539,7 +572,119 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
             <div class="stat-value">{pf:.2f}</div>
             <div class="stat-label">Profit Factor</div>
         </div>
+        <div class="stat-box">
+            <div class="stat-value">{len(long_trades)}</div>
+            <div class="stat-label">Long Trades ({long_win_rate:.0f}%)</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value">{len(short_trades)}</div>
+            <div class="stat-label">Short Trades ({short_win_rate:.0f}%)</div>
+        </div>
     </div>
+
+    <div class="charts-row">
+        <div class="chart-half">
+            <div class="chart-container">
+                <div id="equityCurve"></div>
+            </div>
+        </div>
+        <div class="chart-half">
+            <div class="chart-container">
+                <div id="pnlBySymbol"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="charts-row">
+        <div class="chart-half">
+            <div class="chart-container">
+                <div id="winLossPie"></div>
+            </div>
+        </div>
+        <div class="chart-half">
+            <div class="chart-container">
+                <div id="pnlDistribution"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Equity Curve
+        var equityTrace = {{
+            x: {list(range(len(cumulative_pnl)))},
+            y: {cumulative_pnl},
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Equity',
+            line: {{ color: '#00d4ff', width: 2 }},
+            fill: 'tozeroy',
+            fillcolor: 'rgba(0,212,255,0.1)'
+        }};
+        var equityLayout = {{
+            title: 'Equity Curve',
+            paper_bgcolor: '#16213e',
+            plot_bgcolor: '#1a1a2e',
+            font: {{ color: '#eee' }},
+            xaxis: {{ title: 'Trade #', gridcolor: '#333' }},
+            yaxis: {{ title: 'Portfolio Value ($)', gridcolor: '#333' }},
+            shapes: [{{ type: 'line', x0: 0, x1: {len(cumulative_pnl)}, y0: {initial_capital}, y1: {initial_capital}, line: {{ color: '#888', dash: 'dash' }} }}]
+        }};
+        Plotly.newPlot('equityCurve', [equityTrace], equityLayout);
+
+        // PnL by Symbol
+        var symbolNames = {[s[0] for s in sorted_symbols[:20]]};
+        var symbolPnLs = {[round(s[1], 2) for s in sorted_symbols[:20]]};
+        var barColors = symbolPnLs.map(v => v >= 0 ? '#00ff88' : '#ff4466');
+        var pnlTrace = {{
+            x: symbolNames,
+            y: symbolPnLs,
+            type: 'bar',
+            marker: {{ color: barColors }}
+        }};
+        var pnlLayout = {{
+            title: 'P&L by Symbol (Top 20)',
+            paper_bgcolor: '#16213e',
+            plot_bgcolor: '#1a1a2e',
+            font: {{ color: '#eee' }},
+            xaxis: {{ gridcolor: '#333' }},
+            yaxis: {{ title: 'P&L ($)', gridcolor: '#333' }}
+        }};
+        Plotly.newPlot('pnlBySymbol', [pnlTrace], pnlLayout);
+
+        // Win/Loss Pie
+        var pieTrace = {{
+            values: [{len(winners)}, {len(losers)}],
+            labels: ['Winners', 'Losers'],
+            type: 'pie',
+            marker: {{ colors: ['#00ff88', '#ff4466'] }},
+            hole: 0.4,
+            textinfo: 'label+percent'
+        }};
+        var pieLayout = {{
+            title: 'Win/Loss Distribution',
+            paper_bgcolor: '#16213e',
+            font: {{ color: '#eee' }}
+        }};
+        Plotly.newPlot('winLossPie', [pieTrace], pieLayout);
+
+        // PnL Distribution Histogram
+        var pnlValues = {[round(t.pnl, 2) for t in all_trades]};
+        var histTrace = {{
+            x: pnlValues,
+            type: 'histogram',
+            nbinsx: 30,
+            marker: {{ color: '#00d4ff' }}
+        }};
+        var histLayout = {{
+            title: 'P&L Distribution',
+            paper_bgcolor: '#16213e',
+            plot_bgcolor: '#1a1a2e',
+            font: {{ color: '#eee' }},
+            xaxis: {{ title: 'P&L ($)', gridcolor: '#333' }},
+            yaxis: {{ title: 'Frequency', gridcolor: '#333' }}
+        }};
+        Plotly.newPlot('pnlDistribution', [histTrace], histLayout);
+    </script>
 
     <h2>Statistics by Symbol</h2>
     <table>
@@ -556,7 +701,7 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
     # Long trades table
     html += f"""
     <details>
-        <summary><h3 style="display:inline">Long Trades ({len(long_trades)})</h3></summary>
+        <summary>Long Trades ({len(long_trades)}) - Win Rate: {long_win_rate:.1f}%</summary>
         <table>
             <tr><th>Symbol</th><th>Entry Time</th><th>Exit Time</th><th>Entry</th><th>Exit</th><th>Shares</th><th>Bars</th><th>P&L</th><th>Reason</th></tr>
 """
@@ -573,12 +718,12 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
     # Short trades table
     html += f"""
     <details>
-        <summary><h3 style="display:inline">Short Trades ({len(short_trades)})</h3></summary>
+        <summary>Short Trades ({len(short_trades)}) - Win Rate: {short_win_rate:.1f}%</summary>
         <table>
             <tr><th>Symbol</th><th>Entry Time</th><th>Exit Time</th><th>Entry</th><th>Exit</th><th>Shares</th><th>Bars</th><th>P&L</th><th>Reason</th></tr>
 """
     for t in short_trades:
-        entry_str = t.entry_time.strftime('%Y-%m-%d %H:%M') if t.entry_time else 'N/A'
+        entry_str = t.entry_time.strftime('%Y-%m-%d %H:%M') if t.exit_time else 'N/A'
         exit_str = t.exit_time.strftime('%Y-%m-%d %H:%M') if t.exit_time else 'N/A'
         pnl_class = 'positive' if t.pnl >= 0 else 'negative'
         html += f"<tr><td style='text-align:left'>{t.symbol}</td><td>{entry_str}</td><td>{exit_str}</td>"

@@ -65,8 +65,11 @@ def load_optimized_params(filepath: str = None) -> Dict[str, Tuple[int, float]]:
 
         for _, row in df.iterrows():
             symbol = row['Symbol']
-            atr_period = int(row['ParamA'])
-            atr_mult = float(row['ParamB'])
+            # Handle European decimal format (comma instead of period)
+            param_a = str(row['ParamA']).replace(',', '.')
+            param_b = str(row['ParamB']).replace(',', '.')
+            atr_period = int(float(param_a))
+            atr_mult = float(param_b)
             params[symbol] = (atr_period, atr_mult)
 
         print(f"Loaded optimized params for {len(params)} symbols from {filepath}")

@@ -161,19 +161,152 @@ Supertrend parameters per symbol:
 
 ---
 
+## Backtesting
+
+### Basic Backtest
+Run backtest on historical data:
+```bash
+# Backtest default symbols
+python backtester.py
+
+# Backtest specific symbols
+python backtester.py --symbols AAPL MSFT NVDA
+
+# Backtest all NASDAQ 100 stocks
+python backtester.py --all-nasdaq
+
+# Backtest all DOW 30 stocks
+python backtester.py --all-dow
+
+# Custom period and output
+python backtester.py --all-nasdaq --period 1y --output results.csv --trades trades.csv
+```
+
+### Backtest Options
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--symbols SYM1 SYM2` | Symbols to backtest | DEFAULT_TRADING_SYMBOLS |
+| `--all-nasdaq` | All NASDAQ 100 stocks | - |
+| `--all-dow` | All DOW 30 stocks | - |
+| `--period` | Historical period (1mo, 3mo, 6mo, 1y, 2y) | 1y |
+| `--interval` | Bar interval (1h, 1d) | 1h |
+| `--capital` | Initial capital | 100000 |
+| `--position-size` | Position size USD | 10000 |
+| `--output` | Results CSV file | - |
+| `--trades` | Trades CSV file | - |
+| `--no-optimized` | Use default params instead of optimized | - |
+
+---
+
+## Parameter Sweep / Optimization
+
+Find optimal parameters for each symbol using the multi-indicator parameter sweep.
+
+### Supported Indicators
+| Indicator | Description | Parameters |
+|-----------|-------------|------------|
+| `supertrend` | Basic Supertrend | ATR period, ATR multiplier |
+| `jma` | Jurik Moving Average crossover | Fast period, Slow period, Phase |
+| `kama` | Kaufman Adaptive MA | ER period, Fast EMA, Slow EMA |
+| `supertrend_htf` | Supertrend with HTF filter | ATR period, ATR multiplier |
+
+### Basic Sweep
+```bash
+# Supertrend sweep (default)
+python parameter_sweep.py --all-nasdaq
+
+# JMA sweep
+python parameter_sweep.py --all-nasdaq --indicator jma
+
+# KAMA sweep
+python parameter_sweep.py --all-nasdaq --indicator kama
+
+# Supertrend with HTF filter
+python parameter_sweep.py --all-nasdaq --htf
+python parameter_sweep.py --all-nasdaq --indicator supertrend_htf
+```
+
+### Sweep Modes
+```bash
+# Quick sweep (fewer combinations, faster)
+python parameter_sweep.py --all-nasdaq --quick
+
+# Standard sweep (balanced)
+python parameter_sweep.py --all-nasdaq
+
+# Thorough sweep (more combinations)
+python parameter_sweep.py --all-nasdaq --thorough
+
+# Full sweep (test all exit strategies)
+python parameter_sweep.py --all-nasdaq --full
+```
+
+### Custom Parameters
+```bash
+# Custom ATR periods and multipliers
+python parameter_sweep.py --all-nasdaq --param-a 7 10 14 20 --param-b 2.0 2.5 3.0 3.5
+
+# Custom hold bars (max hold time)
+python parameter_sweep.py --all-nasdaq --hold-bars 3 5 7 10 14 20
+
+# JMA with custom periods
+python parameter_sweep.py --all-nasdaq --indicator jma --param-a 5 7 10 --param-b 14 21 30
+
+# KAMA with custom ER periods
+python parameter_sweep.py --all-nasdaq --indicator kama --param-a 5 10 15 --param-c 20 30 40
+```
+
+### Sweep CLI Options
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--indicator, -i` | Indicator type (supertrend, jma, kama, supertrend_htf) | supertrend |
+| `--htf` | Enable HTF filter | Off |
+| `--htf-interval` | HTF interval | 1d |
+| `--quick` | Quick sweep (fewer params) | - |
+| `--thorough` | Thorough sweep (more params) | - |
+| `--full` | Test all exit strategies | - |
+| `--param-a` | ParamA values (ATR period / JMA fast / KAMA ER) | Auto |
+| `--param-b` | ParamB values (ATR mult / JMA slow / KAMA fast) | Auto |
+| `--param-c` | ParamC values (Phase / Slow EMA) | Auto |
+| `--hold-bars` | Hold bars to test | 3 5 7 10 14 |
+| `--output` | Output CSV file | report_stocks/best_params_overall.csv |
+
+### Output Files
+After sweep, results are saved to:
+- `report_stocks/best_params_overall.csv` - Best params per symbol (for backtester)
+- `report_stocks/best_params_overall_full.csv` - Full results with all metrics
+
+---
+
+## Performance Analysis
+
+Generate HTML reports from backtest results:
+```bash
+python performance_analyzer.py --trades trades.csv --output report.html
+```
+
+---
+
 ## File Structure
 ```
 DOW_NASDAQ/
 ├── stock_paper_trader.py         # Main trading script
+├── backtester.py                 # Backtesting engine
+├── parameter_sweep.py            # Multi-indicator parameter optimization
+├── performance_analyzer.py       # HTML report generator
 ├── ib_connector.py               # Interactive Brokers connection
 ├── stock_symbols.py              # DOW/NASDAQ symbol lists
 ├── stock_settings.py             # Trading configuration
 ├── optimal_hold_times_defaults.py # Hold periods per symbol
 ├── report_stocks/
-│   └── best_params_overall.csv   # Supertrend parameters
+│   ├── best_params_overall.csv   # Optimized parameters
+│   └── best_params_overall_full.csv # Full sweep results
+├── ta/
+│   ├── __init__.py
+│   ├── indicators.py             # JMA, KAMA, HTF Supertrend
+│   └── volatility.py             # ATR calculation
 ├── run_stock_trader.bat          # Simulation mode launcher
 ├── run_ib_paper.bat              # IB paper trading launcher
-├── ta/                           # Technical analysis library
 └── stock_trading_state.json      # Portfolio state (auto-created)
 ```
 

@@ -155,9 +155,9 @@ Supertrend parameters per symbol:
 2. **Trend Flip Exit**: Price crosses below Supertrend
 
 ### Position Sizing
-- Fixed $10,000 per position
+- Dynamic: Capital / 10 per position
 - Maximum 10 open positions
-- Starting capital: $100,000
+- Starting capital: $20,000 (default)
 
 ---
 
@@ -190,10 +190,9 @@ python backtester.py --all-nasdaq --period 1y --output results.csv --trades trad
 | `--all-dow` | All DOW 30 stocks | - |
 | `--period` | Historical period (1mo, 3mo, 6mo, 1y, 2y) | 1y |
 | `--interval` | Bar interval (1h, 1d) | 1h |
-| `--capital` | Initial capital | 100000 |
-| `--position-size` | Position size USD | 10000 |
-| `--output` | Results CSV file | - |
-| `--trades` | Trades CSV file | - |
+| `--capital` | Initial capital (position = capital/10) | 20000 |
+| `--trades` | Trades CSV file (also generates .html) | - |
+| `--html` | HTML report path | - |
 | `--no-optimized` | Use default params instead of optimized | - |
 
 ---
@@ -282,7 +281,13 @@ After sweep, results are saved to:
 
 Generate HTML reports from backtest results:
 ```bash
-python performance_analyzer.py --trades trades.csv --output report.html
+python performance_analyzer.py --trades trades.csv --html report.html
+```
+
+Or use the backtester directly (auto-generates HTML):
+```bash
+python backtester.py --all-nasdaq --trades trades.csv
+# Creates trades.csv and trades.html automatically
 ```
 
 ---

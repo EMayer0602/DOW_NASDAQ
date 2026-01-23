@@ -33,6 +33,45 @@ except ImportError:
 # ============================================
 # DATA LOADING
 # ============================================
+def parse_datetime_column(series: pd.Series) -> pd.Series:
+    """
+    Parse datetime column with multiple format attempts.
+    Handles various datetime formats including ISO, with/without timezone.
+    """
+    # First try standard pandas parsing
+    result = pd.to_datetime(series, errors='coerce')
+
+    # Check if we have many NaT values that might be parseable with different formats
+    nat_mask = result.isna() & series.notna() & (series != '') & (series != 'NaT')
+
+    if nat_mask.any():
+        # Try additional formats for unparsed values
+        formats_to_try = [
+            '%Y-%m-%d %H:%M:%S%z',      # ISO with timezone
+            '%Y-%m-%dT%H:%M:%S%z',      # ISO T-separator with timezone
+            '%Y-%m-%d %H:%M:%S',         # Without timezone
+            '%Y-%m-%dT%H:%M:%S',         # ISO T-separator
+            '%m/%d/%Y %H:%M:%S',         # US format
+            '%d/%m/%Y %H:%M:%S',         # EU format
+            '%Y-%m-%d',                  # Date only
+        ]
+
+        for fmt in formats_to_try:
+            try:
+                parsed = pd.to_datetime(series[nat_mask], format=fmt, errors='coerce')
+                # Update only the values that were successfully parsed
+                newly_parsed = parsed.notna()
+                if newly_parsed.any():
+                    result.loc[nat_mask] = result.loc[nat_mask].fillna(parsed)
+                    nat_mask = result.isna() & series.notna() & (series != '') & (series != 'NaT')
+                    if not nat_mask.any():
+                        break
+            except Exception:
+                continue
+
+    return result
+
+
 def load_trades(filepath: str) -> pd.DataFrame:
     """
     Load trades from CSV file with proper datetime parsing.
@@ -79,15 +118,19 @@ def load_trades(filepath: str) -> pd.DataFrame:
 
     df = df.rename(columns=new_columns)
 
-    # Parse datetime columns
+    # Parse datetime columns with enhanced parsing
     datetime_columns = ['EntryTime', 'ExitTime']
     for col in datetime_columns:
         if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors='coerce')
+            df[col] = parse_datetime_column(df[col])
 
     # Normalize direction column
     if 'Direction' in df.columns:
         df['Direction'] = df['Direction'].str.lower().str.strip()
+
+    # Sort by EntryTime (trades with valid times first, then NaT at the end)
+    if 'EntryTime' in df.columns:
+        df = df.sort_values('EntryTime', na_position='last').reset_index(drop=True)
 
     return df
 
@@ -648,6 +691,8 @@ def generate_html_report(
 
     # Long Trades Table
     long_trades = trades[trades['Direction'] == 'long'] if 'Direction' in trades.columns else trades
+    if 'EntryTime' in long_trades.columns:
+        long_trades = long_trades.sort_values('EntryTime', na_position='last')
     if not long_trades.empty:
         long_total_pnl = long_trades[pnl_col].sum()
         html += f"""
@@ -689,6 +734,8 @@ def generate_html_report(
 
     # Short Trades Table
     short_trades = trades[trades['Direction'] == 'short'] if 'Direction' in trades.columns else pd.DataFrame()
+    if 'EntryTime' in short_trades.columns and not short_trades.empty:
+        short_trades = short_trades.sort_values('EntryTime', na_position='last')
     if not short_trades.empty:
         short_total_pnl = short_trades[pnl_col].sum()
         html += f"""

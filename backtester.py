@@ -638,6 +638,8 @@ def save_trades_to_csv(results: Dict[str, BacktestResult], filepath: str):
 def main():
     parser = argparse.ArgumentParser(description='Backtest DOW/NASDAQ Trading Strategy')
     parser.add_argument('--symbols', nargs='+', default=SYMBOLS, help='Symbols to backtest')
+    parser.add_argument('--all-dow', action='store_true', help='Use all DOW 30 symbols')
+    parser.add_argument('--all-nasdaq', action='store_true', help='Use all NASDAQ 100 symbols')
     parser.add_argument('--period', default='1y', help='Historical period (1mo, 3mo, 6mo, 1y, 2y)')
     parser.add_argument('--interval', default='1h', help='Bar interval (1h, 1d)')
     parser.add_argument('--capital', type=float, default=START_TOTAL_CAPITAL, help='Initial capital')
@@ -651,12 +653,22 @@ def main():
 
     args = parser.parse_args()
 
+    # Determine symbols
+    if args.all_nasdaq:
+        from stock_symbols import NASDAQ_100_TOP
+        symbols = NASDAQ_100_TOP
+    elif args.all_dow:
+        from stock_symbols import DOW_30
+        symbols = DOW_30
+    else:
+        symbols = args.symbols
+
     use_optimized = not args.no_optimized
 
     print("="*60)
     print("STOCK BACKTESTER - DOW/NASDAQ")
     print("="*60)
-    print(f"Symbols: {', '.join(args.symbols)}")
+    print(f"Symbols: {len(symbols)} stocks")
     print(f"Period: {args.period}, Interval: {args.interval}")
     print(f"Capital: ${args.capital:,.0f}, Position Size: ${args.position_size:,.0f}")
     if use_optimized:
@@ -666,7 +678,7 @@ def main():
     print("="*60 + "\n")
 
     results = run_multi_symbol_backtest(
-        symbols=args.symbols,
+        symbols=symbols,
         period=args.period,
         interval=args.interval,
         use_optimized_params=use_optimized,

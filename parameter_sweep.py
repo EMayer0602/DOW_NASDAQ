@@ -230,6 +230,8 @@ def create_heatmap_data(results: List[SweepResult]) -> pd.DataFrame:
 def main():
     parser = argparse.ArgumentParser(description='Parameter Sweep for Trading Strategy')
     parser.add_argument('--symbols', nargs='+', default=SYMBOLS, help='Symbols to sweep')
+    parser.add_argument('--all-dow', action='store_true', help='Use all DOW 30 symbols')
+    parser.add_argument('--all-nasdaq', action='store_true', help='Use all NASDAQ 100 symbols')
     parser.add_argument('--period', default='1y', help='Historical period')
     parser.add_argument('--interval', default='1h', help='Bar interval')
     parser.add_argument('--quick', action='store_true', help='Quick sweep (fewer params)')
@@ -238,6 +240,16 @@ def main():
                         help='Output file for best params')
 
     args = parser.parse_args()
+
+    # Determine symbols
+    if args.all_nasdaq:
+        from stock_symbols import NASDAQ_100_TOP
+        symbols = NASDAQ_100_TOP
+    elif args.all_dow:
+        from stock_symbols import DOW_30
+        symbols = DOW_30
+    else:
+        symbols = args.symbols
 
     # Parameter ranges
     if args.quick:
@@ -253,13 +265,13 @@ def main():
     print("="*60)
     print("PARAMETER SWEEP - DOW/NASDAQ")
     print("="*60)
-    print(f"Symbols: {', '.join(args.symbols)}")
+    print(f"Symbols: {len(symbols)} stocks")
     print(f"Period: {args.period}, Interval: {args.interval}")
     print(f"Mode: {'Quick' if args.quick else 'Thorough' if args.thorough else 'Standard'}")
     print("="*60 + "\n")
 
     results = run_parameter_sweep(
-        symbols=args.symbols,
+        symbols=symbols,
         period=args.period,
         interval=args.interval,
         atr_periods=atr_periods,

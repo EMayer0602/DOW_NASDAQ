@@ -175,13 +175,20 @@ def load_all_params(filepath: str = None) -> Dict[str, SymbolParams]:
 # ============================================
 # DATA FETCHING
 # ============================================
-def fetch_data(symbol: str, period: str = "1y", interval: str = "1h") -> Optional[pd.DataFrame]:
+def fetch_data(symbol: str, period: str = "1y", interval: str = "1h",
+               start_date: str = None, end_date: str = None) -> Optional[pd.DataFrame]:
     """Fetch OHLCV data with proper datetime index."""
     if not YFINANCE_AVAILABLE:
         return None
     try:
         ticker = yf.Ticker(symbol)
-        df = ticker.history(period=period, interval=interval)
+
+        # Use date range if provided, otherwise use period
+        if start_date:
+            df = ticker.history(start=start_date, end=end_date, interval=interval)
+        else:
+            df = ticker.history(period=period, interval=interval)
+
         if df.empty:
             return None
 
@@ -745,7 +752,9 @@ def run_backtest(
     interval: str = "1h",
     use_optimized: bool = True,
     params_file: str = None,
-    capital: float = DEFAULT_CAPITAL
+    capital: float = DEFAULT_CAPITAL,
+    start_date: str = None,
+    end_date: str = None
 ) -> Dict[str, BacktestResult]:
     """Run backtest on multiple symbols."""
 
@@ -760,7 +769,7 @@ def run_backtest(
     for symbol in symbols:
         print(f"Backtesting {symbol}...", end=" ", flush=True)
 
-        df = fetch_data(symbol, period, interval)
+        df = fetch_data(symbol, period, interval, start_date, end_date)
         if df is None or len(df) < 50:
             print("SKIPPED")
             continue
@@ -838,7 +847,9 @@ def main():
     parser.add_argument('--symbols', nargs='+', default=SYMBOLS)
     parser.add_argument('--all-dow', action='store_true')
     parser.add_argument('--all-nasdaq', action='store_true')
-    parser.add_argument('--period', default='1y')
+    parser.add_argument('--period', default='1y', help='Period: 1mo, 3mo, 6mo, 1y, 2y')
+    parser.add_argument('--start', default=None, help='Start date: YYYY-MM-DD (e.g. 2024-12-01)')
+    parser.add_argument('--end', default=None, help='End date: YYYY-MM-DD (e.g. 2025-01-15)')
     parser.add_argument('--interval', default='1h')
     parser.add_argument('--capital', type=float, default=DEFAULT_CAPITAL)
     parser.add_argument('--output', default=None, help='Results CSV')
@@ -865,7 +876,10 @@ def main():
     print("="*60)
     print(f"Symbols: {len(symbols)}")
     print(f"Capital: ${args.capital:,.0f}, Position: ${position_size:,.0f} (Capital/10)")
-    print(f"Period: {args.period}, Interval: {args.interval}")
+    if args.start:
+        print(f"Date Range: {args.start} to {args.end or 'now'}")
+    else:
+        print(f"Period: {args.period}, Interval: {args.interval}")
     print(f"Shorts: ENABLED")
     print("="*60 + "\n")
 
@@ -875,7 +889,9 @@ def main():
         interval=args.interval,
         use_optimized=not args.no_optimized,
         params_file=args.params_file,
-        capital=args.capital
+        capital=args.capital,
+        start_date=args.start,
+        end_date=args.end
     )
 
     print_summary(results, args.capital)

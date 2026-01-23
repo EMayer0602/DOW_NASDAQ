@@ -918,11 +918,12 @@ def main():
 
     print_summary(results, args.capital)
 
-    # Always save trades and generate HTML report
+    # Always save trades CSV and generate HTML report
     trades_file = args.trades or 'trades.csv'
     save_trades_csv(results, trades_file)
 
-    html_file = args.html or trades_file.replace('.csv', '.html')
+    # Always generate report.html with Plotly charts
+    html_file = args.html or 'report.html'
     generate_html_report(results, html_file, args.capital)
 
 

@@ -889,7 +889,7 @@ def main():
     parser = argparse.ArgumentParser(description='Analyze trading performance from CSV')
     parser.add_argument('--trades', required=True, help='Path to trades CSV file')
     parser.add_argument('--positions', help='Path to open positions CSV/JSON file')
-    parser.add_argument('--capital', type=float, default=100000, help='Initial capital (default: 100000)')
+    parser.add_argument('--capital', type=float, default=20000, help='Initial capital (default: 20000)')
     parser.add_argument('--plot', action='store_true', help='Show performance plots')
     parser.add_argument('--save-plot', type=str, help='Save plot to file')
     parser.add_argument('--html', type=str, help='Generate HTML report at specified path')

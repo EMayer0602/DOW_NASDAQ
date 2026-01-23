@@ -38,7 +38,6 @@ from ta.indicators import (
 # DEFAULT SETTINGS
 # ============================================
 DEFAULT_CAPITAL = 20000.0
-DEFAULT_POSITION_SIZE = 2000.0
 DEFAULT_MAX_POSITIONS = 10
 DEFAULT_MAX_LONG = 10
 DEFAULT_MAX_SHORT = 10  # Shorts enabled
@@ -220,13 +219,12 @@ class Backtester:
     def __init__(
         self,
         initial_capital: float = DEFAULT_CAPITAL,
-        position_size: float = DEFAULT_POSITION_SIZE,
         max_positions: int = DEFAULT_MAX_POSITIONS,
         max_long: int = DEFAULT_MAX_LONG,
         max_short: int = DEFAULT_MAX_SHORT
     ):
         self.initial_capital = initial_capital
-        self.position_size = position_size
+        self.position_size = initial_capital / 10  # Dynamic: Capital / 10
         self.max_positions = max_positions
         self.max_long = max_long
         self.max_short = max_short
@@ -747,8 +745,7 @@ def run_backtest(
     interval: str = "1h",
     use_optimized: bool = True,
     params_file: str = None,
-    capital: float = DEFAULT_CAPITAL,
-    position_size: float = DEFAULT_POSITION_SIZE
+    capital: float = DEFAULT_CAPITAL
 ) -> Dict[str, BacktestResult]:
     """Run backtest on multiple symbols."""
 
@@ -758,6 +755,7 @@ def run_backtest(
         all_params = load_all_params(params_file)
 
     results = {}
+    position_size = capital / 10  # Dynamic position size
 
     for symbol in symbols:
         print(f"Backtesting {symbol}...", end=" ", flush=True)
@@ -778,10 +776,7 @@ def run_backtest(
         if params.use_htf or params.indicator == "supertrend_htf":
             htf_df = fetch_htf_data(symbol)
 
-        backtester = Backtester(
-            initial_capital=capital,
-            position_size=position_size
-        )
+        backtester = Backtester(initial_capital=capital)
 
         result = backtester.run(symbol, df, params, htf_df)
         results[symbol] = result
@@ -846,7 +841,6 @@ def main():
     parser.add_argument('--period', default='1y')
     parser.add_argument('--interval', default='1h')
     parser.add_argument('--capital', type=float, default=DEFAULT_CAPITAL)
-    parser.add_argument('--position-size', type=float, default=DEFAULT_POSITION_SIZE)
     parser.add_argument('--output', default=None, help='Results CSV')
     parser.add_argument('--trades', default=None, help='Trades CSV')
     parser.add_argument('--html', default=None, help='HTML report')
@@ -864,11 +858,13 @@ def main():
     else:
         symbols = args.symbols
 
+    position_size = args.capital / 10  # Dynamic: Capital / 10
+
     print("="*60)
     print("BACKTESTER - DOW/NASDAQ (Multi-Indicator)")
     print("="*60)
     print(f"Symbols: {len(symbols)}")
-    print(f"Capital: ${args.capital:,.0f}, Position: ${args.position_size:,.0f}")
+    print(f"Capital: ${args.capital:,.0f}, Position: ${position_size:,.0f} (Capital/10)")
     print(f"Period: {args.period}, Interval: {args.interval}")
     print(f"Shorts: ENABLED")
     print("="*60 + "\n")
@@ -879,8 +875,7 @@ def main():
         interval=args.interval,
         use_optimized=not args.no_optimized,
         params_file=args.params_file,
-        capital=args.capital,
-        position_size=args.position_size
+        capital=args.capital
     )
 
     print_summary(results, args.capital)

@@ -1,63 +1,62 @@
 #!/usr/bin/env python3
 """
-Parameter Sweep for DOW/NASDAQ Trading Strategy
-Finds optimal Supertrend parameters for each symbol.
+Extended Parameter Sweep for DOW/NASDAQ Trading Strategy
+Tests: ATR, Hold Time, HTF Filter, Trend Flip Exit, MA Types
 
 Usage:
-    python parameter_sweep.py                     # Sweep all default symbols
-    python parameter_sweep.py --symbols AAPL      # Sweep single symbol
-    python parameter_sweep.py --quick             # Quick sweep (fewer params)
+    python parameter_sweep.py --all-nasdaq           # Full sweep NASDAQ
+    python parameter_sweep.py --quick                # Quick sweep
+    python parameter_sweep.py --full                 # All parameters
 """
 
 from __future__ import annotations
 
 import argparse
 from datetime import datetime
-from typing import Dict, List, Tuple
-from dataclasses import dataclass
+from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass, field
 import warnings
 warnings.filterwarnings('ignore')
 
 import numpy as np
 import pandas as pd
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import multiprocessing
 
-from backtester import Backtester, fetch_historical_data, BacktestResult
+from backtester import Backtester, fetch_historical_data, BacktestResult, calculate_supertrend
 from stock_settings import SYMBOLS, START_TOTAL_CAPITAL, POSITION_SIZE_USD
 
 
 @dataclass
-class SweepResult:
-    """Result from parameter sweep."""
+class ExtendedSweepResult:
+    """Result from extended parameter sweep."""
     symbol: str
+    # Supertrend params
     atr_period: int
     atr_multiplier: float
+    # Exit params
+    hold_bars: int
+    use_time_exit: bool
+    use_trend_flip: bool
+    # Score
     total_trades: int
     win_rate: float
     total_pnl: float
     profit_factor: float
     max_drawdown_pct: float
     sharpe_ratio: float
-    score: float  # Combined optimization score
+    score: float
 
 
 def calculate_score(result: BacktestResult) -> float:
-    """
-    Calculate optimization score from backtest result.
-    Higher is better. Balances profitability with risk.
-    """
+    """Calculate optimization score. Higher is better."""
     if result.total_trades < 3:
-        return -999  # Not enough trades
+        return -999
 
-    # Components (all normalized roughly 0-1)
-    profit_score = min(result.total_return_pct / 50, 1.0)  # Cap at 50% return
+    profit_score = min(result.total_return_pct / 50, 1.0)
     win_rate_score = result.win_rate / 100
-    pf_score = min(result.profit_factor / 3, 1.0)  # Cap at PF=3
-    dd_penalty = result.max_drawdown_pct / 100  # Lower is better
-    sharpe_score = min(max(result.sharpe_ratio, 0) / 2, 1.0)  # Cap at Sharpe=2
+    pf_score = min(result.profit_factor / 3, 1.0)
+    dd_penalty = result.max_drawdown_pct / 100
+    sharpe_score = min(max(result.sharpe_ratio, 0) / 2, 1.0)
 
-    # Weighted combination
     score = (
         0.30 * profit_score +
         0.20 * win_rate_score +
@@ -65,68 +64,174 @@ def calculate_score(result: BacktestResult) -> float:
         0.15 * sharpe_score -
         0.10 * dd_penalty
     )
-
     return score
 
 
-def sweep_symbol(
+class ExtendedBacktester(Backtester):
+    """Extended backtester with configurable exit strategies."""
+
+    def __init__(
+        self,
+        hold_bars: int = 5,
+        use_time_exit: bool = True,
+        use_trend_flip: bool = True,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.hold_bars = hold_bars
+        self.use_time_exit_override = use_time_exit
+        self.use_trend_flip_override = use_trend_flip
+
+    def run_backtest(self, symbol: str, df: pd.DataFrame) -> BacktestResult:
+        """Run backtest with custom exit logic."""
+        self.reset()
+
+        df = calculate_supertrend(df, self.atr_period, self.atr_multiplier)
+        start_idx = self.atr_period + 5
+
+        for i in range(start_idx, len(df)):
+            current = df.iloc[i]
+            prev = df.iloc[i-1]
+            timestamp = df.index[i]
+            price = current['close']
+
+            self.equity_curve.append(self.get_portfolio_value({symbol: price}))
+
+            # Check existing position
+            if symbol in self.positions:
+                pos = self.positions[symbol]
+                bars_held = i - pos.entry_bar
+
+                should_exit = False
+                reason = ""
+
+                # Time-based exit
+                if self.use_time_exit_override and bars_held >= self.hold_bars:
+                    should_exit = True
+                    reason = f"Time exit ({bars_held} bars)"
+
+                # Trend flip exit
+                if not should_exit and self.use_trend_flip_override:
+                    if pos.direction == "long" and price < current['supertrend']:
+                        should_exit = True
+                        reason = "Trend flip (bearish)"
+                    elif pos.direction == "short" and price > current['supertrend']:
+                        should_exit = True
+                        reason = "Trend flip (bullish)"
+
+                if should_exit:
+                    self.close_position(symbol, price, timestamp, i, reason)
+
+            # Check for new entry
+            if symbol not in self.positions:
+                # Long signal
+                if prev['close'] <= prev['supertrend'] and price > current['supertrend']:
+                    if self.can_open("long"):
+                        self.open_position(symbol, "long", price, timestamp, i)
+                # Short signal
+                elif prev['close'] >= prev['supertrend'] and price < current['supertrend']:
+                    if self.can_open("short"):
+                        self.open_position(symbol, "short", price, timestamp, i)
+
+        # Close remaining positions
+        if symbol in self.positions:
+            last_price = df.iloc[-1]['close']
+            last_time = df.index[-1]
+            self.close_position(symbol, last_price, last_time, len(df)-1, "End of backtest")
+
+        return self._calculate_results(symbol, df)
+
+
+def run_extended_sweep(
     symbol: str,
     df: pd.DataFrame,
     atr_periods: List[int],
     atr_multipliers: List[float],
-    initial_capital: float = START_TOTAL_CAPITAL,
-    position_size: float = POSITION_SIZE_USD
-) -> List[SweepResult]:
-    """Run parameter sweep for single symbol."""
+    hold_bars_list: List[int],
+    test_time_exit: List[bool],
+    test_trend_flip: List[bool],
+) -> List[ExtendedSweepResult]:
+    """Run extended parameter sweep for single symbol."""
     results = []
+    total_combos = len(atr_periods) * len(atr_multipliers) * len(hold_bars_list) * len(test_time_exit) * len(test_trend_flip)
 
-    for period in atr_periods:
-        for mult in atr_multipliers:
-            backtester = Backtester(
-                initial_capital=initial_capital,
-                position_size=position_size,
-                atr_period=period,
-                atr_multiplier=mult
-            )
+    combo = 0
+    for atr_period in atr_periods:
+        for atr_mult in atr_multipliers:
+            for hold_bars in hold_bars_list:
+                for use_time in test_time_exit:
+                    for use_flip in test_trend_flip:
+                        combo += 1
 
-            bt_result = backtester.run_backtest(symbol, df.copy())
-            score = calculate_score(bt_result)
+                        # Skip invalid combinations
+                        if not use_time and not use_flip:
+                            continue  # Need at least one exit
 
-            results.append(SweepResult(
-                symbol=symbol,
-                atr_period=period,
-                atr_multiplier=mult,
-                total_trades=bt_result.total_trades,
-                win_rate=bt_result.win_rate,
-                total_pnl=bt_result.total_pnl,
-                profit_factor=bt_result.profit_factor,
-                max_drawdown_pct=bt_result.max_drawdown_pct,
-                sharpe_ratio=bt_result.sharpe_ratio,
-                score=score
-            ))
+                        backtester = ExtendedBacktester(
+                            atr_period=atr_period,
+                            atr_multiplier=atr_mult,
+                            hold_bars=hold_bars,
+                            use_time_exit=use_time,
+                            use_trend_flip=use_flip
+                        )
+
+                        bt_result = backtester.run_backtest(symbol, df.copy())
+                        score = calculate_score(bt_result)
+
+                        results.append(ExtendedSweepResult(
+                            symbol=symbol,
+                            atr_period=atr_period,
+                            atr_multiplier=atr_mult,
+                            hold_bars=hold_bars,
+                            use_time_exit=use_time,
+                            use_trend_flip=use_flip,
+                            total_trades=bt_result.total_trades,
+                            win_rate=bt_result.win_rate,
+                            total_pnl=bt_result.total_pnl,
+                            profit_factor=bt_result.profit_factor,
+                            max_drawdown_pct=bt_result.max_drawdown_pct,
+                            sharpe_ratio=bt_result.sharpe_ratio,
+                            score=score
+                        ))
 
     return results
 
 
-def run_parameter_sweep(
+def run_full_sweep(
     symbols: List[str],
     period: str = "1y",
     interval: str = "1h",
     atr_periods: List[int] = None,
     atr_multipliers: List[float] = None,
-    parallel: bool = True
-) -> Dict[str, List[SweepResult]]:
-    """Run parameter sweep on multiple symbols."""
+    hold_bars_list: List[int] = None,
+    test_exits: bool = True
+) -> Dict[str, List[ExtendedSweepResult]]:
+    """Run full parameter sweep on multiple symbols."""
 
     if atr_periods is None:
         atr_periods = [7, 10, 14, 20]
     if atr_multipliers is None:
         atr_multipliers = [2.0, 2.5, 3.0, 3.5, 4.0]
+    if hold_bars_list is None:
+        hold_bars_list = [3, 5, 7, 10, 14]
 
-    total_combos = len(atr_periods) * len(atr_multipliers)
+    # Exit strategy combinations
+    if test_exits:
+        test_time_exit = [True, False]
+        test_trend_flip = [True, False]
+    else:
+        test_time_exit = [True]
+        test_trend_flip = [True]
+
+    total_combos = len(atr_periods) * len(atr_multipliers) * len(hold_bars_list)
+    if test_exits:
+        total_combos *= 3  # 3 valid exit combinations
+
     print(f"Testing {total_combos} parameter combinations per symbol")
     print(f"ATR Periods: {atr_periods}")
     print(f"ATR Multipliers: {atr_multipliers}")
+    print(f"Hold Bars: {hold_bars_list}")
+    print(f"Exit Strategies: Time={test_time_exit}, TrendFlip={test_trend_flip}")
     print()
 
     all_results = {}
@@ -139,18 +244,24 @@ def run_parameter_sweep(
             print("SKIPPED (insufficient data)")
             continue
 
-        results = sweep_symbol(symbol, df, atr_periods, atr_multipliers)
+        results = run_extended_sweep(
+            symbol, df,
+            atr_periods, atr_multipliers,
+            hold_bars_list,
+            test_time_exit, test_trend_flip
+        )
         all_results[symbol] = results
 
         # Find best
         best = max(results, key=lambda r: r.score)
-        print(f"Best: ATR({best.atr_period}, {best.atr_multiplier}) "
-              f"Score={best.score:.3f}, PnL=${best.total_pnl:+,.0f}")
+        exit_str = f"T{'Y' if best.use_time_exit else 'N'}F{'Y' if best.use_trend_flip else 'N'}"
+        print(f"Best: ATR({best.atr_period},{best.atr_multiplier}) Hold={best.hold_bars} Exit={exit_str} "
+              f"Score={best.score:.3f} PnL=${best.total_pnl:+,.0f}")
 
     return all_results
 
 
-def find_best_params(results: Dict[str, List[SweepResult]]) -> pd.DataFrame:
+def find_best_params(results: Dict[str, List[ExtendedSweepResult]]) -> pd.DataFrame:
     """Find best parameters for each symbol."""
     rows = []
 
@@ -158,7 +269,6 @@ def find_best_params(results: Dict[str, List[SweepResult]]) -> pd.DataFrame:
         if not sweep_results:
             continue
 
-        # Best by score
         best = max(sweep_results, key=lambda r: r.score)
 
         rows.append({
@@ -167,6 +277,9 @@ def find_best_params(results: Dict[str, List[SweepResult]]) -> pd.DataFrame:
             'Indicator': 'supertrend',
             'ParamA': best.atr_period,
             'ParamB': best.atr_multiplier,
+            'HoldBars': best.hold_bars,
+            'TimeExit': best.use_time_exit,
+            'TrendFlip': best.use_trend_flip,
             'Trades': best.total_trades,
             'WinRate': best.win_rate,
             'TotalPnL': best.total_pnl,
@@ -179,62 +292,66 @@ def find_best_params(results: Dict[str, List[SweepResult]]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def print_sweep_summary(results: Dict[str, List[SweepResult]]):
+def print_sweep_summary(results: Dict[str, List[ExtendedSweepResult]]):
     """Print sweep summary."""
-    print("\n" + "="*90)
-    print("PARAMETER SWEEP SUMMARY")
-    print("="*90)
+    print("\n" + "="*110)
+    print("EXTENDED PARAMETER SWEEP SUMMARY")
+    print("="*110)
 
     df = find_best_params(results)
     if df.empty:
         print("No results")
         return
 
-    print(f"{'Symbol':<8} {'ATR':>10} {'Trades':>7} {'Win%':>7} {'PnL':>12} "
-          f"{'PF':>6} {'MaxDD%':>8} {'Score':>7}")
-    print("-"*90)
+    print(f"{'Symbol':<8} {'ATR':>10} {'Hold':>6} {'Exit':>6} {'Trades':>7} {'Win%':>7} "
+          f"{'PnL':>12} {'PF':>6} {'MaxDD%':>8} {'Score':>7}")
+    print("-"*110)
 
     for _, row in df.iterrows():
-        atr_str = f"({row['ParamA']}, {row['ParamB']})"
+        atr_str = f"({row['ParamA']},{row['ParamB']})"
+        exit_str = f"T{'Y' if row['TimeExit'] else 'N'}F{'Y' if row['TrendFlip'] else 'N'}"
         pnl_str = f"${row['TotalPnL']:+,.0f}"
-        print(f"{row['Symbol']:<8} {atr_str:>10} {row['Trades']:>7} {row['WinRate']:>6.1f}% "
-              f"{pnl_str:>12} {row['ProfitFactor']:>6.2f} {row['MaxDD%']:>7.2f}% {row['Score']:>7.3f}")
+        print(f"{row['Symbol']:<8} {atr_str:>10} {row['HoldBars']:>6} {exit_str:>6} {row['Trades']:>7} "
+              f"{row['WinRate']:>6.1f}% {pnl_str:>12} {row['ProfitFactor']:>6.2f} "
+              f"{row['MaxDD%']:>7.2f}% {row['Score']:>7.3f}")
 
-    print("="*90)
+    print("="*110)
+
+    # Summary stats
+    total_pnl = df['TotalPnL'].sum()
+    avg_win_rate = df['WinRate'].mean()
+    avg_pf = df['ProfitFactor'].mean()
+    print(f"\nTotal PnL: ${total_pnl:+,.0f} | Avg Win Rate: {avg_win_rate:.1f}% | Avg PF: {avg_pf:.2f}")
 
 
 def save_best_params(df: pd.DataFrame, filepath: str):
-    """Save best parameters to CSV (compatible with stock_paper_trader)."""
-    # Format for stock_paper_trader
+    """Save best parameters to CSV."""
+    import os
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+    # Format for backtester
     output_df = df[['Symbol', 'Direction', 'Indicator', 'ParamA', 'ParamB']].copy()
     output_df.to_csv(filepath, sep=';', index=False)
     print(f"\nBest parameters saved to {filepath}")
 
-
-def create_heatmap_data(results: List[SweepResult]) -> pd.DataFrame:
-    """Create heatmap data from sweep results."""
-    data = {}
-    for r in results:
-        mult = r.atr_multiplier
-        period = r.atr_period
-        if mult not in data:
-            data[mult] = {}
-        data[mult][period] = r.score
-
-    return pd.DataFrame(data).T
+    # Also save full results
+    full_output = filepath.replace('.csv', '_full.csv')
+    df.to_csv(full_output, index=False)
+    print(f"Full results saved to {full_output}")
 
 
 # ============================================
 # MAIN
 # ============================================
 def main():
-    parser = argparse.ArgumentParser(description='Parameter Sweep for Trading Strategy')
+    parser = argparse.ArgumentParser(description='Extended Parameter Sweep')
     parser.add_argument('--symbols', nargs='+', default=SYMBOLS, help='Symbols to sweep')
     parser.add_argument('--all-dow', action='store_true', help='Use all DOW 30 symbols')
     parser.add_argument('--all-nasdaq', action='store_true', help='Use all NASDAQ 100 symbols')
     parser.add_argument('--period', default='1y', help='Historical period')
     parser.add_argument('--interval', default='1h', help='Bar interval')
     parser.add_argument('--quick', action='store_true', help='Quick sweep (fewer params)')
+    parser.add_argument('--full', action='store_true', help='Full sweep (all exit strategies)')
     parser.add_argument('--thorough', action='store_true', help='Thorough sweep (more params)')
     parser.add_argument('--output', default='report_stocks/best_params_overall.csv',
                         help='Output file for best params')
@@ -255,27 +372,35 @@ def main():
     if args.quick:
         atr_periods = [10, 14]
         atr_multipliers = [2.5, 3.0, 3.5]
+        hold_bars_list = [5, 7]
+        test_exits = False
     elif args.thorough:
         atr_periods = [5, 7, 10, 12, 14, 17, 20, 25]
         atr_multipliers = [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+        hold_bars_list = [3, 5, 7, 10, 14, 20]
+        test_exits = True
     else:
         atr_periods = [7, 10, 14, 20]
         atr_multipliers = [2.0, 2.5, 3.0, 3.5, 4.0]
+        hold_bars_list = [3, 5, 7, 10]
+        test_exits = args.full
 
     print("="*60)
-    print("PARAMETER SWEEP - DOW/NASDAQ")
+    print("EXTENDED PARAMETER SWEEP - DOW/NASDAQ")
     print("="*60)
     print(f"Symbols: {len(symbols)} stocks")
     print(f"Period: {args.period}, Interval: {args.interval}")
-    print(f"Mode: {'Quick' if args.quick else 'Thorough' if args.thorough else 'Standard'}")
+    print(f"Mode: {'Quick' if args.quick else 'Thorough' if args.thorough else 'Full' if args.full else 'Standard'}")
     print("="*60 + "\n")
 
-    results = run_parameter_sweep(
+    results = run_full_sweep(
         symbols=symbols,
         period=args.period,
         interval=args.interval,
         atr_periods=atr_periods,
-        atr_multipliers=atr_multipliers
+        atr_multipliers=atr_multipliers,
+        hold_bars_list=hold_bars_list,
+        test_exits=test_exits
     )
 
     print_sweep_summary(results)
@@ -283,15 +408,7 @@ def main():
     # Save results
     df = find_best_params(results)
     if not df.empty:
-        # Ensure directory exists
-        import os
-        os.makedirs(os.path.dirname(args.output), exist_ok=True)
         save_best_params(df, args.output)
-
-        # Also save full results
-        full_output = args.output.replace('.csv', '_full.csv')
-        df.to_csv(full_output, index=False)
-        print(f"Full results saved to {full_output}")
 
 
 if __name__ == "__main__":

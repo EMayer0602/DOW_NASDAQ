@@ -807,16 +807,34 @@ def plot_analysis(trades: pd.DataFrame, initial_capital: float = 100000, save_pa
 
     # 1. Equity Curve
     ax1 = axes[0, 0]
-    trades_sorted = trades.sort_values('ExitTime') if 'ExitTime' in trades.columns else trades
-    cumulative_pnl = trades_sorted[pnl_col].cumsum()
-    equity = initial_capital + cumulative_pnl
 
-    if 'ExitTime' in trades_sorted.columns:
-        ax1.plot(trades_sorted['ExitTime'], equity, 'b-', linewidth=1.5)
-        ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
-        plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45)
+    # Filter out rows with missing ExitTime for time-based plotting
+    if 'ExitTime' in trades.columns:
+        # Drop NaT values and sort
+        trades_with_time = trades.dropna(subset=['ExitTime']).copy()
+        trades_with_time = trades_with_time.sort_values('ExitTime')
+
+        # Convert timezone-aware to timezone-naive for matplotlib
+        if len(trades_with_time) > 0:
+            exit_times = trades_with_time['ExitTime']
+            if hasattr(exit_times.dt, 'tz') and exit_times.dt.tz is not None:
+                trades_with_time['ExitTime'] = exit_times.dt.tz_localize(None)
+
+            cumulative_pnl = trades_with_time[pnl_col].cumsum()
+            equity = initial_capital + cumulative_pnl
+
+            ax1.plot(trades_with_time['ExitTime'].values, equity.values, 'b-', linewidth=1.5)
+            ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+            plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45)
+        else:
+            # Fallback to trade number
+            cumulative_pnl = trades[pnl_col].cumsum()
+            equity = initial_capital + cumulative_pnl
+            ax1.plot(range(len(equity)), equity.values, 'b-', linewidth=1.5)
     else:
-        ax1.plot(range(len(equity)), equity, 'b-', linewidth=1.5)
+        cumulative_pnl = trades[pnl_col].cumsum()
+        equity = initial_capital + cumulative_pnl
+        ax1.plot(range(len(equity)), equity.values, 'b-', linewidth=1.5)
 
     ax1.axhline(y=initial_capital, color='gray', linestyle='--', alpha=0.5)
     ax1.set_title('Equity Curve')
@@ -832,13 +850,14 @@ def plot_analysis(trades: pd.DataFrame, initial_capital: float = 100000, save_pa
     ax2.set_ylabel('Frequency')
     ax2.grid(True, alpha=0.3)
 
-    # 3. Cumulative PnL
+    # 3. Cumulative PnL (by trade number, using all trades)
     ax3 = axes[1, 0]
-    ax3.fill_between(range(len(cumulative_pnl)), cumulative_pnl, 0,
-                     where=cumulative_pnl >= 0, color='green', alpha=0.3)
-    ax3.fill_between(range(len(cumulative_pnl)), cumulative_pnl, 0,
-                     where=cumulative_pnl < 0, color='red', alpha=0.3)
-    ax3.plot(cumulative_pnl.values, 'b-', linewidth=1.5)
+    all_cumulative_pnl = trades[pnl_col].cumsum()
+    ax3.fill_between(range(len(all_cumulative_pnl)), all_cumulative_pnl, 0,
+                     where=all_cumulative_pnl >= 0, color='green', alpha=0.3)
+    ax3.fill_between(range(len(all_cumulative_pnl)), all_cumulative_pnl, 0,
+                     where=all_cumulative_pnl < 0, color='red', alpha=0.3)
+    ax3.plot(all_cumulative_pnl.values, 'b-', linewidth=1.5)
     ax3.set_title('Cumulative PnL')
     ax3.set_xlabel('Trade Number')
     ax3.set_ylabel('Cumulative PnL ($)')

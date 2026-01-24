@@ -102,13 +102,19 @@ class Position:
 # ============================================
 # DATA FETCHING
 # ============================================
-def fetch_historical_data(symbol: str, period: str = "1y", interval: str = "1h") -> Optional[pd.DataFrame]:
+def fetch_historical_data(symbol: str, period: str = "1y", interval: str = "1h",
+                          start_date: str = None, end_date: str = None) -> Optional[pd.DataFrame]:
     """Fetch historical OHLCV data."""
     if not YFINANCE_AVAILABLE:
         return None
     try:
         ticker = yf.Ticker(symbol)
-        df = ticker.history(period=period, interval=interval)
+        if start_date and end_date:
+            df = ticker.history(start=start_date, end=end_date, interval=interval)
+        elif start_date:
+            df = ticker.history(start=start_date, interval=interval)
+        else:
+            df = ticker.history(period=period, interval=interval)
         if df.empty:
             return None
         df.columns = [c.lower() for c in df.columns]
@@ -364,6 +370,8 @@ def run_sweep(
     indicator: str = "supertrend",
     period: str = "1y",
     interval: str = "1h",
+    start_date: str = None,
+    end_date: str = None,
     params_a: List[float] = None,
     params_b: List[float] = None,
     params_c: List[float] = None,
@@ -420,7 +428,7 @@ def run_sweep(
     for symbol in symbols:
         print(f"Sweeping {symbol}...", end=" ", flush=True)
 
-        df = fetch_historical_data(symbol, period, interval)
+        df = fetch_historical_data(symbol, period, interval, start_date, end_date)
         if df is None or len(df) < 50:
             print("SKIPPED (insufficient data)")
             continue
@@ -593,6 +601,8 @@ Examples:
     # Data settings
     parser.add_argument('--period', default='1y', help='Historical period')
     parser.add_argument('--interval', default='1h', help='Bar interval')
+    parser.add_argument('--start', default=None, help='Start date: YYYY-MM-DD')
+    parser.add_argument('--end', default=None, help='End date: YYYY-MM-DD')
 
     # Sweep modes
     parser.add_argument('--quick', action='store_true', help='Quick sweep (fewer params)')
@@ -684,6 +694,8 @@ Examples:
         indicator=indicator,
         period=args.period,
         interval=args.interval,
+        start_date=args.start,
+        end_date=args.end,
         params_a=params_a,
         params_b=params_b,
         params_c=params_c,

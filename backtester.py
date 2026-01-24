@@ -535,12 +535,12 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
 <html>
 <head>
     <title>Backtest Report</title>
-    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script src="plotly.min.js"></script>
     <script>
-        // Fallback if CDN fails
+        // Fallback to CDN if local file fails
         if (typeof Plotly === 'undefined') {{
             var s = document.createElement('script');
-            s.src = 'https://unpkg.com/plotly.js@2.27.0/dist/plotly.min.js';
+            s.src = 'https://cdn.plot.ly/plotly-2.27.0.min.js';
             document.head.appendChild(s);
         }}
     </script>

@@ -896,6 +896,7 @@ def main():
     parser.add_argument('--end', default=None, help='End date: YYYY-MM-DD (e.g. 2025-01-15)')
     parser.add_argument('--interval', default='1h')
     parser.add_argument('--capital', type=float, default=DEFAULT_CAPITAL)
+    parser.add_argument('--max-positions', type=int, default=DEFAULT_MAX_POSITIONS, dest='max_positions')
     parser.add_argument('--output', default=None, help='Results CSV')
     parser.add_argument('--trades', default=None, help='Trades CSV')
     parser.add_argument('--html', default=None, help='HTML report')

@@ -535,7 +535,15 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
 <html>
 <head>
     <title>Backtest Report</title>
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script>
+        // Fallback if CDN fails
+        if (typeof Plotly === 'undefined') {{
+            var s = document.createElement('script');
+            s.src = 'https://unpkg.com/plotly.js@2.27.0/dist/plotly.min.js';
+            document.head.appendChild(s);
+        }}
+    </script>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 20px; background: #1a1a2e; color: #eee; }}
         h1, h2, h3 {{ color: #00d4ff; }}
@@ -628,6 +636,11 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
     </div>
 
     <script>
+        function renderCharts() {{
+            if (typeof Plotly === 'undefined') {{
+                setTimeout(renderCharts, 100);
+                return;
+            }}
         // Equity Curve
         var equityTrace = {{
             x: {list(range(len(cumulative_pnl)))},
@@ -703,6 +716,13 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
             yaxis: {{ title: 'Frequency', gridcolor: '#333' }}
         }};
         Plotly.newPlot('pnlDistribution', [histTrace], histLayout);
+        }}
+        // Initialize charts when DOM is ready
+        if (document.readyState === 'loading') {{
+            document.addEventListener('DOMContentLoaded', renderCharts);
+        }} else {{
+            renderCharts();
+        }}
     </script>
 
     <h2>Statistics Overview</h2>

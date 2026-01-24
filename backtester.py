@@ -493,16 +493,16 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
     gross_loss = abs(sum(t.pnl for t in losers))
     pf = gross_profit / gross_loss if gross_loss > 0 else 0
 
-    # Calculate cumulative PnL for equity curve
+    # Calculate cumulative PnL for equity curve (convert to float for JSON/JS)
     cumulative_pnl = []
-    running_total = initial_capital
+    running_total = float(initial_capital)
     trade_dates = []
     for t in all_trades:
-        running_total += t.pnl
-        cumulative_pnl.append(running_total)
+        running_total += float(t.pnl)
+        cumulative_pnl.append(round(running_total, 2))
         trade_dates.append(t.exit_time.strftime('%Y-%m-%d %H:%M') if t.exit_time else '')
 
-    # PnL by symbol for bar chart
+    # PnL by symbol for bar chart (convert to float for JSON/JS)
     symbol_pnl = {}
     for t in all_trades:
         symbol_pnl[t.symbol] = symbol_pnl.get(t.symbol, 0) + t.pnl
@@ -667,7 +667,7 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
 
         // PnL by Symbol
         var symbolNames = {[s[0] for s in sorted_symbols[:20]]};
-        var symbolPnLs = {[round(s[1], 2) for s in sorted_symbols[:20]]};
+        var symbolPnLs = {[round(float(s[1]), 2) for s in sorted_symbols[:20]]};
         var barColors = symbolPnLs.map(v => v >= 0 ? '#00ff88' : '#ff4466');
         var pnlTrace = {{
             x: symbolNames,
@@ -702,7 +702,7 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
         Plotly.newPlot('winLossPie', [pieTrace], pieLayout);
 
         // PnL Distribution Histogram
-        var pnlValues = {[round(t.pnl, 2) for t in all_trades]};
+        var pnlValues = {[round(float(t.pnl), 2) for t in all_trades]};
         var histTrace = {{
             x: pnlValues,
             type: 'histogram',

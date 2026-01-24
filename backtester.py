@@ -464,6 +464,14 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
                          initial_capital: float = DEFAULT_CAPITAL):
     """Generate HTML report with Plotly charts and trade tables."""
 
+    # Load Plotly library for inline embedding
+    plotly_js = ""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    plotly_path = os.path.join(script_dir, "plotly.min.js")
+    if os.path.exists(plotly_path):
+        with open(plotly_path, 'r') as f:
+            plotly_js = f.read()
+
     all_trades = []
     for r in results.values():
         all_trades.extend(r.trades)
@@ -535,15 +543,7 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
 <html>
 <head>
     <title>Backtest Report</title>
-    <script src="plotly.min.js"></script>
-    <script>
-        // Fallback to CDN if local file fails
-        if (typeof Plotly === 'undefined') {{
-            var s = document.createElement('script');
-            s.src = 'https://cdn.plot.ly/plotly-2.27.0.min.js';
-            document.head.appendChild(s);
-        }}
-    </script>
+    <script>{plotly_js}</script>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 20px; background: #1a1a2e; color: #eee; }}
         h1, h2, h3 {{ color: #00d4ff; }}

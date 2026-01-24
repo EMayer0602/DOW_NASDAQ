@@ -797,6 +797,7 @@ def run_backtest(
     use_optimized: bool = True,
     params_file: str = None,
     capital: float = DEFAULT_CAPITAL,
+    max_positions: int = DEFAULT_MAX_POSITIONS,
     start_date: str = None,
     end_date: str = None
 ) -> Dict[str, BacktestResult]:
@@ -935,6 +936,7 @@ def main():
         use_optimized=not args.no_optimized,
         params_file=args.params_file,
         capital=args.capital,
+        max_positions=args.max_positions,
         start_date=args.start,
         end_date=args.end
     )

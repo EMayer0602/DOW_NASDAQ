@@ -231,7 +231,7 @@ class Backtester:
         max_short: int = DEFAULT_MAX_SHORT
     ):
         self.initial_capital = initial_capital
-        self.position_size = initial_capital / 10  # Dynamic: Capital / 10
+        self.position_size = initial_capital / max_positions  # Dynamic: Capital / max_positions
         self.max_positions = max_positions
         self.max_long = max_long
         self.max_short = max_short
@@ -808,7 +808,7 @@ def run_backtest(
         all_params = load_all_params(params_file)
 
     results = {}
-    position_size = capital / 10  # Dynamic position size
+    position_size = capital / max_positions  # Dynamic position size
 
     for symbol in symbols:
         print(f"Backtesting {symbol}...", end=" ", flush=True)
@@ -913,13 +913,13 @@ def main():
     else:
         symbols = args.symbols
 
-    position_size = args.capital / 10  # Dynamic: Capital / 10
+    position_size = args.capital / args.max_positions  # Dynamic: Capital / max_positions
 
     print("="*60)
     print("BACKTESTER - DOW/NASDAQ (Multi-Indicator)")
     print("="*60)
     print(f"Symbols: {len(symbols)}")
-    print(f"Capital: ${args.capital:,.0f}, Position: ${position_size:,.0f} (Capital/10)")
+    print(f"Capital: ${args.capital:,.0f}, Position: ${position_size:,.0f} (Capital/{args.max_positions})")
     if args.start:
         print(f"Date Range: {args.start} to {args.end or 'now'}")
     else:

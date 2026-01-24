@@ -469,7 +469,7 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
     script_dir = os.path.dirname(os.path.abspath(__file__))
     plotly_path = os.path.join(script_dir, "plotly.min.js")
     if os.path.exists(plotly_path):
-        with open(plotly_path, 'r') as f:
+        with open(plotly_path, 'r', encoding='utf-8') as f:
             plotly_js = f.read()
 
     all_trades = []

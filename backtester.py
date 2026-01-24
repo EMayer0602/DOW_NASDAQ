@@ -832,7 +832,7 @@ def run_backtest(
         if params.use_htf or params.indicator == "supertrend_htf":
             htf_df = fetch_htf_data(symbol)
 
-        backtester = Backtester(initial_capital=capital)
+        backtester = Backtester(initial_capital=capital, max_positions=max_positions)
 
         result = backtester.run(symbol, df, params, htf_df)
         results[symbol] = result

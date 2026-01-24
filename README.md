@@ -1,16 +1,19 @@
 # DOW_NASDAQ - Supertrend Stock Trading Bot
 
+**Version 2.0.0** - Shared Capital Pool with Dynamic Position Sizing
+
 ## Overview
 Paper trading system for DOW 30 and NASDAQ 100 stocks using Supertrend strategy.
 Designed for Interactive Brokers (IB) paper and live trading.
 
-## Features
-- Supertrend-based entry/exit signals
-- Time-based exits with optimized hold periods per symbol
-- Trend flip exits
-- Long-only mode
-- Interactive Brokers integration for paper/live trading
-- Yahoo Finance fallback for data (simulation mode)
+## Key Features
+- **Shared Capital Pool**: All symbols trade from one capital pool
+- **Dynamic Position Sizing**: Stake = Current Cash / Max Positions (compounding effect)
+- **Multi-Indicator Support**: Supertrend, JMA, KAMA, HTF Supertrend
+- **Long & Short Trading**: Both directions enabled
+- **Interactive HTML Reports**: Plotly charts with equity curve, P&L distribution
+- **Time-based & Trend Flip Exits**: Configurable exit strategies
+- **Interactive Brokers Integration**: Paper and live trading
 
 ---
 
@@ -155,9 +158,12 @@ Supertrend parameters per symbol:
 2. **Trend Flip Exit**: Price crosses below Supertrend
 
 ### Position Sizing
-- Dynamic: Capital / 10 per position
-- Maximum 10 open positions
+- **Dynamic**: Current Cash / Max Positions (compounding)
+- Gewinne → größere Stakes → größere Gewinne
+- Verluste → kleinere Stakes → kleinere Verluste
+- Maximum 10 open positions (default)
 - Starting capital: $20,000 (default)
+- Shared capital pool across all symbols
 
 ---
 
@@ -190,10 +196,17 @@ python backtester.py --all-nasdaq --period 1y --output results.csv --trades trad
 | `--all-dow` | All DOW 30 stocks | - |
 | `--period` | Historical period (1mo, 3mo, 6mo, 1y, 2y) | 1y |
 | `--interval` | Bar interval (1h, 1d) | 1h |
-| `--capital` | Initial capital (position = capital/10) | 20000 |
-| `--trades` | Trades CSV file (also generates .html) | - |
-| `--html` | HTML report path | - |
+| `--capital` | Initial capital | 20000 |
+| `--max-positions` | Max open positions (stake = capital/max) | 10 |
+| `--start` | Start date (YYYY-MM-DD) | - |
+| `--end` | End date (YYYY-MM-DD) | - |
 | `--no-optimized` | Use default params instead of optimized | - |
+
+### Example: 2 Year Backtest
+```bash
+python backtester.py --all-nasdaq --period 2y
+```
+Output: `trades.csv` and `report.html` (auto-generated with Plotly charts)
 
 ---
 

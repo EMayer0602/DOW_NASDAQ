@@ -803,25 +803,26 @@ def run_backtest(
     start_date: str = None,
     end_date: str = None
 ) -> Dict[str, BacktestResult]:
-    """Run backtest on multiple symbols."""
+    """Run backtest on multiple symbols with shared capital pool."""
 
     # Load optimized params
     all_params = {}
     if use_optimized:
         all_params = load_all_params(params_file)
 
-    results = {}
-    position_size = capital / max_positions  # Dynamic position size
+    # Phase 1: Collect all potential trades from all symbols
+    all_symbol_trades = []
+    symbol_data = {}
 
     for symbol in symbols:
-        print(f"Backtesting {symbol}...", end=" ", flush=True)
+        print(f"Analyzing {symbol}...", end=" ", flush=True)
 
         df = fetch_data(symbol, period, interval, start_date, end_date)
         if df is None or len(df) < 50:
             print("SKIPPED")
             continue
 
-        # Get params (or use defaults)
+        # Get params
         if symbol in all_params:
             params = all_params[symbol]
         else:
@@ -832,15 +833,111 @@ def run_backtest(
         if params.use_htf or params.indicator == "supertrend_htf":
             htf_df = fetch_htf_data(symbol)
 
-        backtester = Backtester(initial_capital=capital, max_positions=max_positions)
-
+        # Run backtest with fixed $1 position to get trade signals
+        backtester = Backtester(initial_capital=1000000, max_positions=1)
         result = backtester.run(symbol, df, params, htf_df)
-        results[symbol] = result
 
-        pnl_str = f"${result.total_pnl:+,.0f}"
-        print(f"[{params.indicator}] {result.total_trades} trades, {result.win_rate:.0f}% win, {pnl_str}")
+        # Store trade signals with metadata
+        for trade in result.trades:
+            all_symbol_trades.append({
+                'symbol': symbol,
+                'direction': trade.direction,
+                'entry_time': trade.entry_time,
+                'exit_time': trade.exit_time,
+                'entry_price': trade.entry_price,
+                'exit_price': trade.exit_price,
+                'bars_held': trade.bars_held,
+                'exit_reason': trade.exit_reason,
+                'pnl_pct': trade.pnl_pct,
+                'indicator': params.indicator,
+                'params': f"({params.param_a},{params.param_b})"
+            })
 
-    return results
+        symbol_data[symbol] = {'params': params, 'trade_count': len(result.trades)}
+        print(f"[{params.indicator}] {len(result.trades)} signals")
+
+    # Phase 2: Sort trades by entry time and simulate with shared capital
+    all_symbol_trades.sort(key=lambda t: t['entry_time'])
+
+    print(f"\nSimulating {len(all_symbol_trades)} trades with shared capital pool...")
+
+    current_cash = capital
+    final_trades = []
+    results = {s: [] for s in symbols}
+
+    for trade_signal in all_symbol_trades:
+        # Calculate position size based on CURRENT cash
+        position_size = current_cash / max_positions
+        shares = int(position_size / trade_signal['entry_price'])
+
+        if shares <= 0:
+            continue
+
+        # Calculate actual P&L
+        if trade_signal['direction'] == 'long':
+            pnl = shares * (trade_signal['exit_price'] - trade_signal['entry_price'])
+        else:
+            pnl = shares * (trade_signal['entry_price'] - trade_signal['exit_price'])
+
+        # Update cash
+        current_cash += pnl
+
+        # Create trade record
+        trade = Trade(
+            symbol=trade_signal['symbol'],
+            direction=trade_signal['direction'],
+            entry_price=trade_signal['entry_price'],
+            exit_price=trade_signal['exit_price'],
+            shares=shares,
+            entry_time=trade_signal['entry_time'],
+            exit_time=trade_signal['exit_time'],
+            bars_held=trade_signal['bars_held'],
+            exit_reason=trade_signal['exit_reason']
+        )
+        trade.pnl = float(pnl)
+        trade.pnl_pct = float(trade_signal['pnl_pct'])
+
+        final_trades.append(trade)
+        results[trade_signal['symbol']].append(trade)
+
+    # Phase 3: Build BacktestResult for each symbol
+    final_results = {}
+    for symbol in symbols:
+        trades = results.get(symbol, [])
+        if not trades:
+            continue
+
+        params = symbol_data.get(symbol, {}).get('params', SymbolParams(symbol=symbol))
+        total_pnl = sum(t.pnl for t in trades)
+        winners = [t for t in trades if t.pnl > 0]
+        losers = [t for t in trades if t.pnl <= 0]
+        win_rate = len(winners) / len(trades) * 100 if trades else 0
+        gross_profit = sum(t.pnl for t in winners)
+        gross_loss = abs(sum(t.pnl for t in losers))
+        pf = gross_profit / gross_loss if gross_loss > 0 else 0
+
+        final_results[symbol] = BacktestResult(
+            symbol=symbol,
+            indicator=params.indicator,
+            params=f"({params.param_a},{params.param_b})",
+            total_trades=len(trades),
+            winning_trades=len(winners),
+            losing_trades=len(losers),
+            win_rate=win_rate,
+            total_pnl=total_pnl,
+            profit_factor=pf,
+            max_drawdown_pct=0.0,
+            sharpe_ratio=0.0,
+            trades=trades,
+            start_date=trades[0].entry_time if trades else datetime.now(),
+            end_date=trades[-1].exit_time if trades else datetime.now()
+        )
+
+        pnl_str = f"${total_pnl:+,.0f}"
+        print(f"{symbol}: {len(trades)} trades, {win_rate:.0f}% win, {pnl_str}")
+
+    print(f"\nFinal capital: ${current_cash:,.2f} (from ${capital:,.2f})")
+    return final_results
 
 
 def print_summary(results: Dict[str, BacktestResult], capital: float):

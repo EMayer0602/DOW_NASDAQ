@@ -539,37 +539,38 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
     long_pf = long_gross_profit / long_gross_loss if long_gross_loss > 0 else 0
     short_pf = short_gross_profit / short_gross_loss if short_gross_loss > 0 else 0
 
-    html = f"""<!DOCTYPE html>
+    html_header = """<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>Backtest Report</title>
-    <script>{plotly_js}</script>
+    <script>""" + plotly_js + """</script>
     <style>
-        body {{ font-family: Arial, sans-serif; margin: 20px; background: #1a1a2e; color: #eee; }}
-        h1, h2, h3 {{ color: #00d4ff; }}
-        table {{ border-collapse: collapse; width: 100%; margin: 15px 0; }}
-        th, td {{ border: 1px solid #444; padding: 8px; text-align: right; }}
-        th {{ background: #16213e; color: #00d4ff; }}
-        tr:nth-child(even) {{ background: #1f1f3d; }}
-        tr:hover {{ background: #2a2a5a; }}
-        .positive {{ color: #00ff88; }}
-        .negative {{ color: #ff4466; }}
-        .summary {{ background: #16213e; padding: 20px; border-radius: 10px; margin: 20px 0; display: flex; flex-wrap: wrap; justify-content: space-around; }}
-        .stat-box {{ margin: 10px 15px; text-align: center; min-width: 100px; }}
-        .stat-value {{ font-size: 24px; font-weight: bold; }}
-        .stat-label {{ font-size: 12px; color: #888; }}
-        .chart-container {{ background: #16213e; border-radius: 10px; padding: 15px; margin: 20px 0; }}
-        .charts-row {{ display: flex; flex-wrap: wrap; gap: 20px; }}
-        .chart-half {{ flex: 1; min-width: 400px; }}
-        details {{ margin: 10px 0; }}
-        summary {{ cursor: pointer; padding: 10px; background: #16213e; border-radius: 5px; font-size: 16px; }}
-        summary:hover {{ background: #1f1f5f; }}
+        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a2e; color: #eee; }
+        h1, h2, h3 { color: #00d4ff; }
+        table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+        th, td { border: 1px solid #444; padding: 8px; text-align: right; }
+        th { background: #16213e; color: #00d4ff; }
+        tr:nth-child(even) { background: #1f1f3d; }
+        tr:hover { background: #2a2a5a; }
+        .positive { color: #00ff88; }
+        .negative { color: #ff4466; }
+        .summary { background: #16213e; padding: 20px; border-radius: 10px; margin: 20px 0; display: flex; flex-wrap: wrap; justify-content: space-around; }
+        .stat-box { margin: 10px 15px; text-align: center; min-width: 100px; }
+        .stat-value { font-size: 24px; font-weight: bold; }
+        .stat-label { font-size: 12px; color: #888; }
+        .chart-container { background: #16213e; border-radius: 10px; padding: 15px; margin: 20px 0; }
+        .charts-row { display: flex; flex-wrap: wrap; gap: 20px; }
+        .chart-half { flex: 1; min-width: 400px; }
+        details { margin: 10px 0; }
+        summary { cursor: pointer; padding: 10px; background: #16213e; border-radius: 5px; font-size: 16px; }
+        summary:hover { background: #1f1f5f; }
     </style>
 </head>
 <body>
     <h1>Backtest Report</h1>
-    <p style="color:#888">Period: {all_trades[0].entry_time.strftime('%Y-%m-%d') if all_trades else 'N/A'} to {all_trades[-1].exit_time.strftime('%Y-%m-%d') if all_trades else 'N/A'}</p>
+"""
+    html = html_header + f"""    <p style="color:#888">Period: {all_trades[0].entry_time.strftime('%Y-%m-%d') if all_trades else 'N/A'} to {all_trades[-1].exit_time.strftime('%Y-%m-%d') if all_trades else 'N/A'}</p>
 
     <div class="summary">
         <div class="stat-box">

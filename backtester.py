@@ -381,7 +381,9 @@ class Backtester:
         return self._calc_result(symbol, params, df)
 
     def _open(self, symbol: str, direction: str, price: float, timestamp: datetime, bar_idx: int):
-        shares = int(self.position_size / price)
+        # Dynamic position size based on current cash
+        position_size = self.cash / self.max_positions
+        shares = int(position_size / price)
         if shares <= 0 or shares * price > self.cash:
             return
         self.cash -= shares * price

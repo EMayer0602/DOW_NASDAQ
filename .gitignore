@@ -29,5 +29,9 @@ Thumbs.db
 stock_trading_state.json
 *.log
 
+# Generated backtest outputs
+report.html
+trades.csv
+
 # Keep report_stocks
 !report_stocks/

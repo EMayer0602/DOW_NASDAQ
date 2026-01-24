@@ -542,6 +542,7 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
     html = f"""<!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>Backtest Report</title>
     <script>{plotly_js}</script>
     <style>

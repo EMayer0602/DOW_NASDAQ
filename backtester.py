@@ -780,7 +780,7 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
     html += "</table></details>\n"
     html += "</body></html>"
 
-    with open(filepath, 'w') as f:
+    with open(filepath, 'w', encoding='utf-8') as f:
         f.write(html)
     print(f"HTML report saved to {filepath}")
 

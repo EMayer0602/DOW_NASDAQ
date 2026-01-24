@@ -645,7 +645,7 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
             }}
         // Equity Curve
         var equityTrace = {{
-            x: {list(range(len(cumulative_pnl)))},
+            x: {trade_dates},
             y: {cumulative_pnl},
             type: 'scatter',
             mode: 'lines',
@@ -659,9 +659,9 @@ def generate_html_report(results: Dict[str, BacktestResult], filepath: str,
             paper_bgcolor: '#16213e',
             plot_bgcolor: '#1a1a2e',
             font: {{ color: '#eee' }},
-            xaxis: {{ title: 'Trade #', gridcolor: '#333' }},
+            xaxis: {{ title: 'Date', gridcolor: '#333', type: 'date' }},
             yaxis: {{ title: 'Portfolio Value ($)', gridcolor: '#333' }},
-            shapes: [{{ type: 'line', x0: 0, x1: {len(cumulative_pnl)}, y0: {initial_capital}, y1: {initial_capital}, line: {{ color: '#888', dash: 'dash' }} }}]
+            shapes: [{{ type: 'line', x0: '{trade_dates[0] if trade_dates else ""}', x1: '{trade_dates[-1] if trade_dates else ""}', y0: {initial_capital}, y1: {initial_capital}, line: {{ color: '#888', dash: 'dash' }} }}]
         }};
         Plotly.newPlot('equityCurve', [equityTrace], equityLayout);
 

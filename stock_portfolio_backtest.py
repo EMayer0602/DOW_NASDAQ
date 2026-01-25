@@ -44,12 +44,13 @@ _ib_connector: Optional[IBConnector] = None
 # ============================================
 INITIAL_CAPITAL = 100_000.0
 MAX_POSITIONS = 10
-POSITION_SIZE_USD = 10_000.0
+POSITION_SIZE_USD = 10_000.0  # Fixed size (fallback)
+POSITION_SIZE_PCT = 0.10  # 10% of equity per position (dynamic mode)
 COMMISSION_PER_TRADE = 5.0  # $5 per trade
 
 # Data settings
 YEARS_OF_DATA = 2
-MONTHS_TO_TEST = 1  # Test on last N months
+MONTHS_TO_TEST = 24  # Full 2 years for simulation
 
 # Default params file
 DEFAULT_PARAMS_CSV = "report_stocks/best_params_daily.csv"
@@ -213,25 +214,28 @@ class Trade:
 
 
 class PortfolioBacktest:
-    """Multi-symbol portfolio backtester."""
+    """Multi-symbol portfolio backtester with dynamic position sizing."""
 
     def __init__(
         self,
         initial_capital: float = INITIAL_CAPITAL,
         max_positions: int = MAX_POSITIONS,
-        position_size: float = POSITION_SIZE_USD,
-        commission: float = COMMISSION_PER_TRADE
+        position_size_pct: float = POSITION_SIZE_PCT,
+        commission: float = COMMISSION_PER_TRADE,
+        dynamic_sizing: bool = True
     ):
         self.initial_capital = initial_capital
         self.max_positions = max_positions
-        self.position_size = position_size
+        self.position_size_pct = position_size_pct  # % of equity per position
         self.commission = commission
+        self.dynamic_sizing = dynamic_sizing
 
         # State
         self.cash = initial_capital
         self.positions: Dict[str, Position] = {}
         self.trades: List[Trade] = []
         self.equity_curve: List[Tuple[datetime, float]] = []
+        self._last_equity = initial_capital  # Track for dynamic sizing
 
     def can_open_position(self) -> bool:
         return len(self.positions) < self.max_positions
@@ -246,17 +250,33 @@ class PortfolioBacktest:
         )
         return self.cash + position_value
 
+    def get_position_size(self, prices: Dict[str, float]) -> float:
+        """Calculate position size based on current equity."""
+        if self.dynamic_sizing:
+            equity = self.get_equity(prices)
+            self._last_equity = equity
+            return equity * self.position_size_pct
+        else:
+            return POSITION_SIZE_USD
+
     def open_position(
         self,
         symbol: str,
         price: float,
         date: datetime,
-        min_hold_bars: int
+        min_hold_bars: int,
+        current_prices: Dict[str, float] = None
     ) -> bool:
         if self.has_position(symbol) or not self.can_open_position():
             return False
 
-        shares = int(self.position_size / price)
+        # Dynamic position sizing based on current equity
+        if current_prices:
+            position_value = self.get_position_size(current_prices)
+        else:
+            position_value = self._last_equity * self.position_size_pct
+
+        shares = int(position_value / price)
         cost = shares * price + self.commission
 
         if shares <= 0 or cost > self.cash:
@@ -357,10 +377,20 @@ def run_portfolio_backtest(
     symbols: List[str],
     params: Dict[str, Dict],
     test_months: int = MONTHS_TO_TEST,
+    dynamic_sizing: bool = True,
+    position_size_pct: float = POSITION_SIZE_PCT,
     verbose: bool = True
 ) -> PortfolioBacktest:
     """
-    Run portfolio backtest on multiple symbols.
+    Run portfolio backtest on multiple symbols with dynamic position sizing.
+
+    Args:
+        symbols: List of stock symbols
+        params: Dict of symbol -> trading parameters
+        test_months: Number of months to simulate (default: 24 = 2 years)
+        dynamic_sizing: If True, position size = X% of current equity
+        position_size_pct: Percentage of equity per position (default: 10%)
+        verbose: Print trade details
     """
     print(f"\nFetching data for {len(symbols)} symbols...")
 
@@ -377,29 +407,43 @@ def run_portfolio_backtest(
         print("No data fetched!")
         return None
 
-    # Find common date range for test period
+    # Find common date range for simulation period
     end_date = min(df.index[-1] for df in all_data.values())
     start_date = end_date - timedelta(days=test_months * 30)
 
-    print(f"\nTest period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+    # Ensure we have enough warmup data (50 bars minimum before start)
+    earliest_start = max(df.index[0] for df in all_data.values())
+    warmup_date = earliest_start + timedelta(days=60)  # 60 days warmup
+    if start_date < warmup_date:
+        start_date = warmup_date
 
-    # Prepare data for test period and calculate supertrend
+    print(f"\nSimulation period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+    print(f"Position sizing: {'DYNAMIC (' + str(int(position_size_pct*100)) + '% of equity)' if dynamic_sizing else 'FIXED ($' + str(POSITION_SIZE_USD) + ')'}")
+
+    # Prepare data and calculate indicators
     test_data = {}
     for symbol, df in all_data.items():
-        # Get full data for supertrend calculation, then filter to test period
         sym_params = params.get(symbol, {'atr_period': 10, 'atr_multiplier': 3.0, 'min_hold_bars': 5})
-        df = calculate_supertrend(df, sym_params['atr_period'], sym_params['atr_multiplier'])
+
+        # Get indicator-specific params
+        period = sym_params.get('period', sym_params.get('atr_period', 10))
+        multiplier = sym_params.get('multiplier', sym_params.get('atr_multiplier', 3.0))
+
+        df = calculate_supertrend(df, period, multiplier)
         test_data[symbol] = df[df.index >= start_date].copy()
 
-    # Get all unique dates in test period
+    # Get all unique dates in simulation period
     all_dates = sorted(set(
         date for df in test_data.values() for date in df.index
     ))
 
-    print(f"Test days: {len(all_dates)}")
+    print(f"Simulation days: {len(all_dates)}")
 
-    # Initialize portfolio
-    portfolio = PortfolioBacktest()
+    # Initialize portfolio with dynamic sizing
+    portfolio = PortfolioBacktest(
+        dynamic_sizing=dynamic_sizing,
+        position_size_pct=position_size_pct
+    )
 
     # Run backtest day by day
     for i, date in enumerate(all_dates):
@@ -408,6 +452,12 @@ def run_portfolio_backtest(
 
         current_prices = {}
 
+        # First pass: collect all current prices
+        for symbol, df in test_data.items():
+            if date in df.index:
+                current_prices[symbol] = df.loc[date, 'close']
+
+        # Second pass: check signals
         for symbol, df in test_data.items():
             if date not in df.index:
                 continue
@@ -424,11 +474,9 @@ def run_portfolio_backtest(
             prev_close = prev['close']
             prev_st = prev['supertrend']
 
-            current_prices[symbol] = close
-
             # Get params
             sym_params = params.get(symbol, {'atr_period': 10, 'atr_multiplier': 3.0, 'min_hold_bars': 5})
-            min_hold = sym_params['min_hold_bars']
+            min_hold = sym_params.get('min_hold_bars', 5)
 
             # Check exits first
             if portfolio.has_position(symbol):
@@ -458,9 +506,13 @@ def run_portfolio_backtest(
             elif portfolio.can_open_position():
                 # Long signal: price crosses above supertrend
                 if prev_close <= prev_st and close > st:
-                    if portfolio.open_position(symbol, close, date, min_hold):
+                    if portfolio.open_position(symbol, close, date, min_hold, current_prices):
+                        # Get position size for display
+                        pos_size = portfolio.get_position_size(current_prices)
+                        shares = int(pos_size / close)
                         if verbose:
-                            print(f"  [{date.strftime('%Y-%m-%d')}] OPEN {symbol} @ ${close:.2f}")
+                            equity = portfolio.get_equity(current_prices)
+                            print(f"  [{date.strftime('%Y-%m-%d')}] OPEN {symbol}: {shares} shares @ ${close:.2f} (equity: ${equity:,.0f})")
 
         # Record equity
         equity = portfolio.get_equity(current_prices)
@@ -561,15 +613,24 @@ def main():
     parser.add_argument('--params', default=DEFAULT_PARAMS_CSV,
                         help='Parameters CSV file')
     parser.add_argument('--months', type=int, default=MONTHS_TO_TEST,
-                        help='Months to test (out-of-sample)')
+                        help='Months to simulate (default: 24 = 2 years)')
     parser.add_argument('--capital', type=float, default=INITIAL_CAPITAL,
                         help='Initial capital')
+    parser.add_argument('--dynamic', action='store_true', default=True,
+                        help='Use dynamic position sizing (default: True)')
+    parser.add_argument('--fixed', action='store_true',
+                        help='Use fixed position sizing ($10k per position)')
+    parser.add_argument('--size-pct', type=float, default=POSITION_SIZE_PCT,
+                        help='Position size as %% of equity (default: 0.10 = 10%%)')
     parser.add_argument('--quiet', '-q', action='store_true',
                         help='Quiet mode (less output)')
     parser.add_argument('--live', action='store_true',
                         help='Connect to live IB (default: paper)')
 
     args = parser.parse_args()
+
+    # Determine sizing mode
+    dynamic_sizing = not args.fixed
 
     # Check IB
     if not IB_AVAILABLE:
@@ -586,14 +647,17 @@ def main():
     # Select symbols
     symbols = args.symbols or DEFAULT_TRADING_SYMBOLS
 
-    print("="*60)
-    print("MULTI-SYMBOL PORTFOLIO BACKTEST (IB)")
-    print("="*60)
+    print("="*70)
+    print("2-YEAR PORTFOLIO SIMULATION WITH DYNAMIC SIZING (IB)")
+    print("="*70)
     print(f"Data source: Interactive Brokers")
     print(f"Symbols: {', '.join(symbols)}")
-    print(f"Test period: Last {args.months} month(s)")
+    print(f"Simulation period: {args.months} months ({args.months/12:.1f} years)")
     print(f"Initial capital: ${args.capital:,.2f}")
-    print(f"Position size: ${POSITION_SIZE_USD:,.2f}")
+    if dynamic_sizing:
+        print(f"Position sizing: DYNAMIC ({int(args.size_pct*100)}% of equity per position)")
+    else:
+        print(f"Position sizing: FIXED (${POSITION_SIZE_USD:,.2f} per position)")
     print(f"Max positions: {MAX_POSITIONS}")
     print(f"Commission: ${COMMISSION_PER_TRADE} per trade")
     print("="*60)
@@ -615,6 +679,8 @@ def main():
             symbols,
             params,
             test_months=args.months,
+            dynamic_sizing=dynamic_sizing,
+            position_size_pct=args.size_pct,
             verbose=not args.quiet
         )
 

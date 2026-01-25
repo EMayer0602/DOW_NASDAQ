@@ -59,10 +59,11 @@ class IBConnector:
         else:
             self.port = 4001 if use_gateway else IB_LIVE_PORT
 
-    def connect(self, client_id: int = IB_CLIENT_ID) -> bool:
+    def connect(self, client_id: int = IB_CLIENT_ID, timeout: int = 30) -> bool:
         """Connect to IB TWS/Gateway."""
         try:
-            self.ib.connect(IB_HOST, self.port, clientId=client_id)
+            self.ib.connect(IB_HOST, self.port, clientId=client_id, timeout=timeout)
+            self.ib.sleep(2)  # Wait for initial sync
             self.connected = True
             account_type = "Paper" if self.paper_trading else "LIVE"
             logger.info(f"Connected to IB ({account_type}) on port {self.port}")

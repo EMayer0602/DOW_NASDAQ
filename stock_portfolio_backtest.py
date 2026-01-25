@@ -42,9 +42,9 @@ _ib_connector: Optional[IBConnector] = None
 # ============================================
 # PORTFOLIO SETTINGS
 # ============================================
-INITIAL_CAPITAL = 100_000.0
+INITIAL_CAPITAL = 20_000.0
 MAX_POSITIONS = 10
-POSITION_SIZE_USD = 10_000.0  # Fixed size (fallback)
+POSITION_SIZE_USD = 2_000.0  # Fixed size (fallback)
 POSITION_SIZE_PCT = 0.10  # 10% of equity per position (dynamic mode)
 COMMISSION_PER_TRADE = 5.0  # $5 per trade
 
@@ -619,7 +619,7 @@ def main():
     parser.add_argument('--dynamic', action='store_true', default=True,
                         help='Use dynamic position sizing (default: True)')
     parser.add_argument('--fixed', action='store_true',
-                        help='Use fixed position sizing ($10k per position)')
+                        help='Use fixed position sizing ($2k per position)')
     parser.add_argument('--size-pct', type=float, default=POSITION_SIZE_PCT,
                         help='Position size as %% of equity (default: 0.10 = 10%%)')
     parser.add_argument('--quiet', '-q', action='store_true',

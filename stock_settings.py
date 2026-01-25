@@ -13,7 +13,7 @@ IB_PAPER_TRADING = True  # Paper trading mode
 # ============================================
 # TIMEFRAME SETTINGS
 # ============================================
-TIMEFRAME = "1h"  # Primary timeframe (1h works well for stocks)
+TIMEFRAME = "1d"  # Primary timeframe (1d = less fees, better results)
 HTF_TIMEFRAME = "1d"  # Higher timeframe for filters
 
 # IB-compatible timeframe mapping

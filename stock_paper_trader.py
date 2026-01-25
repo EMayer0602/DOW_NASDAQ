@@ -39,6 +39,9 @@ try:
 except ImportError:
     IB_AVAILABLE = False
 
+# Import indicators
+from ta.indicators import calculate_jma_crossover, calculate_supertrend as calc_supertrend_indicator
+
 # Import stock settings
 from stock_settings import (
     SYMBOLS, TIMEFRAME, HTF_TIMEFRAME,
@@ -196,9 +199,9 @@ def fetch_ohlcv(symbol: str, connector: Optional[IBConnector] = None,
 # ============================================
 # SIGNAL DETECTION
 # ============================================
-def detect_signal(df: pd.DataFrame, symbol: str) -> Optional[str]:
+def detect_signal(df: pd.DataFrame, symbol: str, indicator: str = "supertrend") -> Optional[str]:
     """
-    Detect trading signal based on Supertrend crossover.
+    Detect trading signal based on indicator.
 
     Returns:
         "long" for buy signal, "short" for sell signal, None if no signal
@@ -209,18 +212,32 @@ def detect_signal(df: pd.DataFrame, symbol: str) -> Optional[str]:
     current = df.iloc[-1]
     prev = df.iloc[-2]
 
-    close_now = current['close']
-    close_prev = prev['close']
-    st_now = current['supertrend']
-    st_prev = prev['supertrend']
+    if indicator == "jma":
+        # JMA crossover signal
+        if 'jma_signal' not in df.columns:
+            return None
+        sig_now = current.get('jma_signal', 0)
+        sig_prev = prev.get('jma_signal', 0)
 
-    # Long signal: price crosses above Supertrend
-    if close_prev <= st_prev and close_now > st_now:
-        return "long"
+        # Long: signal changes to 1 (fast crosses above slow)
+        if sig_prev != 1 and sig_now == 1:
+            return "long"
+        # Short: signal changes to -1 (fast crosses below slow)
+        if sig_prev != -1 and sig_now == -1:
+            return "short"
+    else:
+        # Supertrend signal
+        close_now = current['close']
+        close_prev = prev['close']
+        st_now = current.get('supertrend', current['close'])
+        st_prev = prev.get('supertrend', prev['close'])
 
-    # Short signal: price crosses below Supertrend (disabled for long-only)
-    # if close_prev >= st_prev and close_now < st_now:
-    #     return "short"
+        # Long signal: price crosses above Supertrend
+        if close_prev <= st_prev and close_now > st_now:
+            return "long"
+        # Short signal: price crosses below Supertrend
+        if close_prev >= st_prev and close_now < st_now:
+            return "short"
 
     return None
 
@@ -482,16 +499,23 @@ def run_trading_cycle(symbols: List[str], connector: Optional[IBConnector] = Non
 
             # Get parameters
             sym_params = params.get((symbol, 'long'), {
+                'indicator': 'supertrend',
                 'atr_period': 10,
                 'atr_multiplier': 3.0
             })
+            indicator = sym_params.get('indicator', 'supertrend')
 
-            # Calculate Supertrend
-            df = calculate_supertrend(
-                df,
-                period=sym_params.get('atr_period', 10),
-                multiplier=sym_params.get('atr_multiplier', 3.0)
-            )
+            # Calculate indicator
+            if indicator == 'jma':
+                fast_period = int(sym_params.get('atr_period', 7))
+                slow_period = int(sym_params.get('atr_multiplier', 21))
+                df = calculate_jma_crossover(df, fast_period, slow_period)
+            else:
+                df = calculate_supertrend(
+                    df,
+                    period=sym_params.get('atr_period', 10),
+                    multiplier=sym_params.get('atr_multiplier', 3.0)
+                )
 
             current_price = df.iloc[-1]['close']
             current_prices[symbol] = current_price
@@ -507,12 +531,13 @@ def run_trading_cycle(symbols: List[str], connector: Optional[IBConnector] = Non
 
             # Check for new entry
             elif portfolio.can_open_position():
-                signal = detect_signal(df, symbol)
-                if signal == "long":
+                signal = detect_signal(df, symbol, indicator)
+                if signal in ["long", "short"]:
                     stake = portfolio.get_stake()
                     shares = int(stake / current_price)
                     if shares > 0:
-                        portfolio.open_position(symbol, "long", current_price, shares, now)
+                        portfolio.open_position(symbol, signal, current_price, shares, now)
+                        print(f"[{symbol}] {signal.upper()} entry @ ${current_price:.2f} ({indicator})")
 
         except Exception as e:
             print(f"[{symbol}] Error: {e}")

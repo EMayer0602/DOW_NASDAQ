@@ -10,6 +10,14 @@ import plotly.graph_objects as go
 from datetime import datetime
 import json
 import os
+import time
+
+# IB Connection
+try:
+    from ib_insync import IB, Stock
+    IB_AVAILABLE = True
+except ImportError:
+    IB_AVAILABLE = False
 
 # Page config
 st.set_page_config(
@@ -41,10 +49,80 @@ def load_params():
         return pd.read_csv(PARAMS_FILE, sep=';')
     return None
 
+@st.cache_resource
+def get_ib_connection():
+    """Get or create IB connection."""
+    if not IB_AVAILABLE:
+        return None
+    try:
+        ib = IB()
+        ib.connect('127.0.0.1', 7497, clientId=99, timeout=20)
+        return ib
+    except Exception as e:
+        return None
+
+def get_ib_portfolio(ib):
+    """Fetch portfolio from IB."""
+    if ib is None or not ib.isConnected():
+        return None
+    try:
+        portfolio = ib.portfolio()
+        data = []
+        for item in portfolio:
+            data.append({
+                'Symbol': item.contract.symbol,
+                'Shares': item.position,
+                'Price': item.marketPrice,
+                'Value': item.marketValue,
+                'Avg Cost': item.averageCost,
+                'Unrealized PnL': item.unrealizedPNL,
+                'Realized PnL': item.realizedPNL
+            })
+        return pd.DataFrame(data)
+    except:
+        return None
+
+def get_ib_account(ib):
+    """Fetch account summary from IB."""
+    if ib is None or not ib.isConnected():
+        return None
+    try:
+        ib.reqAccountSummary()
+        time.sleep(0.5)
+        summary = ib.accountSummary()
+        account = {}
+        for item in summary:
+            account[item.tag] = item.value
+        return account
+    except:
+        return None
+
 # Sidebar
 st.sidebar.header("Settings")
+use_ib = st.sidebar.checkbox("Connect to IB", value=True)
 auto_refresh = st.sidebar.checkbox("Auto Refresh (30s)", value=False)
+if st.sidebar.button("🔄 Refresh Now"):
+    st.cache_resource.clear()
+    st.rerun()
+
+# IB Connection
+ib = None
+ib_portfolio = None
+ib_account = None
+
+if use_ib and IB_AVAILABLE:
+    ib = get_ib_connection()
+    if ib and ib.isConnected():
+        st.sidebar.success("IB Connected")
+        ib_portfolio = get_ib_portfolio(ib)
+        ib_account = get_ib_account(ib)
+    else:
+        st.sidebar.warning("IB not connected")
+elif not IB_AVAILABLE:
+    st.sidebar.info("ib_insync not installed")
+
 if auto_refresh:
+    time.sleep(30)
     st.rerun()
 
 # Load data
@@ -55,7 +133,26 @@ params_df = load_params()
 # Main metrics
 col1, col2, col3, col4 = st.columns(4)
 
-if state:
+# Use IB data if available
+if ib_portfolio is not None and len(ib_portfolio) > 0:
+    total_value = ib_portfolio['Value'].sum()
+    total_unrealized = ib_portfolio['Unrealized PnL'].sum()
+    total_realized = ib_portfolio['Realized PnL'].sum()
+
+    # Get cash from account
+    cash = float(ib_account.get('TotalCashValue', 0)) if ib_account else 0
+    net_liq = float(ib_account.get('NetLiquidation', total_value + cash)) if ib_account else total_value + cash
+
+    with col1:
+        st.metric("Net Liquidation", f"${net_liq:,.2f}")
+    with col2:
+        st.metric("Cash", f"${cash:,.2f}")
+    with col3:
+        st.metric("Positions", len(ib_portfolio))
+    with col4:
+        st.metric("Unrealized PnL", f"${total_unrealized:+,.2f}")
+
+elif state:
     portfolio = state.get('portfolio', {})
     cash = portfolio.get('cash', 100000)
     initial = portfolio.get('initial_capital', 100000)
@@ -98,7 +195,15 @@ left_col, right_col = st.columns(2)
 # Open Positions
 with left_col:
     st.subheader("📊 Open Positions")
-    if state and positions:
+    if ib_portfolio is not None and len(ib_portfolio) > 0:
+        display_df = ib_portfolio.copy()
+        display_df['Price'] = display_df['Price'].apply(lambda x: f"${x:.2f}")
+        display_df['Value'] = display_df['Value'].apply(lambda x: f"${x:,.2f}")
+        display_df['Avg Cost'] = display_df['Avg Cost'].apply(lambda x: f"${x:.2f}")
+        display_df['Unrealized PnL'] = display_df['Unrealized PnL'].apply(lambda x: f"${x:+,.2f}")
+        st.dataframe(display_df[['Symbol', 'Shares', 'Price', 'Value', 'Avg Cost', 'Unrealized PnL']],
+                     use_container_width=True, hide_index=True)
+    elif state and positions:
         pos_data = []
         for sym, pos in positions.items():
             pos_data.append({
@@ -143,6 +248,16 @@ elif trades_df is not None:
     st.dataframe(trades_df.tail(20), use_container_width=True, hide_index=True)
 else:
     st.info("No trades yet")
+
+# PnL by Symbol Chart (IB)
+if ib_portfolio is not None and len(ib_portfolio) > 0:
+    st.subheader("📊 Unrealized P&L by Symbol")
+    fig = px.bar(ib_portfolio, x='Symbol', y='Unrealized PnL',
+                 color='Unrealized PnL',
+                 color_continuous_scale=['red', 'gray', 'green'],
+                 color_continuous_midpoint=0)
+    fig.update_layout(height=300)
+    st.plotly_chart(fig, use_container_width=True)
 
 # PnL Chart
 st.subheader("📈 Cumulative P&L")

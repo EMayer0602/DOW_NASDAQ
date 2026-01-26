@@ -95,7 +95,7 @@ COMMISSION_PER_TRADE = 5.0  # $5 minimum per trade (round trip = $10)
 
 # Data settings
 YEARS_OF_DATA = 2
-MONTHS_TO_EXCLUDE = 1  # Last month for out-of-sample testing
+MONTHS_TO_EXCLUDE = 0  # Use full 2 years for optimization
 
 # Output
 REPORT_DIR = "report_stocks"

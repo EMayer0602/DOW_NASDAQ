@@ -77,12 +77,15 @@ class Trade:
     exit_reason: str
     pnl: float = 0.0
     pnl_pct: float = 0.0
+    fee: float = 10.0  # $5 entry + $5 exit = $10 per round trip
 
     def __post_init__(self):
         if self.direction == "long":
-            self.pnl = self.shares * (self.exit_price - self.entry_price)
+            gross_pnl = self.shares * (self.exit_price - self.entry_price)
         else:
-            self.pnl = self.shares * (self.entry_price - self.exit_price)
+            gross_pnl = self.shares * (self.entry_price - self.exit_price)
+        # Subtract fees ($5 entry + $5 exit = $10 per trade)
+        self.pnl = gross_pnl - self.fee
         if self.shares > 0 and self.entry_price > 0:
             self.pnl_pct = (self.pnl / (self.shares * self.entry_price)) * 100
 
@@ -873,11 +876,13 @@ def run_backtest(
         if shares <= 0:
             continue
 
-        # Calculate actual P&L
+        # Calculate actual P&L with $10 fee ($5 entry + $5 exit)
+        fee = 10.0
         if trade_signal['direction'] == 'long':
-            pnl = shares * (trade_signal['exit_price'] - trade_signal['entry_price'])
+            gross_pnl = shares * (trade_signal['exit_price'] - trade_signal['entry_price'])
         else:
-            pnl = shares * (trade_signal['entry_price'] - trade_signal['exit_price'])
+            gross_pnl = shares * (trade_signal['entry_price'] - trade_signal['exit_price'])
+        pnl = gross_pnl - fee
 
         # Update cash
         current_cash += pnl
@@ -892,10 +897,11 @@ def run_backtest(
             entry_time=trade_signal['entry_time'],
             exit_time=trade_signal['exit_time'],
             bars_held=trade_signal['bars_held'],
-            exit_reason=trade_signal['exit_reason']
+            exit_reason=trade_signal['exit_reason'],
+            fee=fee
         )
         trade.pnl = float(pnl)
-        trade.pnl_pct = float(trade_signal['pnl_pct'])
+        trade.pnl_pct = (pnl / (shares * trade_signal['entry_price'])) * 100 if shares > 0 else 0
 
         final_trades.append(trade)
         results[trade_signal['symbol']].append(trade)

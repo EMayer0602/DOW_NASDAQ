@@ -63,6 +63,7 @@ POSITION_SIZE_USD = 10_000.0  # Fixed position size per trade
 # TRADING FEES
 # ============================================
 FEE_RATE = 0.0  # IB has per-share fees, not percentage
+FEE_PER_TRADE = 5.0  # $5 flat fee per trade (entry + exit = $10 total)
 IB_COMMISSION_PER_SHARE = 0.005  # $0.005 per share (IB tiered)
 IB_MIN_COMMISSION = 1.0  # Minimum $1 per trade
 

@@ -73,7 +73,12 @@ JMA_PHASES = [0, 50, 100]  # -100 to +100, 0 = balanced
 JMA_POWERS = [1, 2]  # 1 = linear, 2 = squared smoothing
 
 # Hold bars for all indicators
-MIN_HOLD_BARS = [3, 4, 5, 6, 7, 8]  # Days
+MIN_HOLD_BARS = [3, 5, 7, 10, 14]  # Days
+
+# HTF (Higher Time Frame) Filter - Weekly trend
+USE_HTF_FILTER = [True, False]  # Test with and without HTF filter
+HTF_ATR_PERIOD = 10
+HTF_ATR_MULTIPLIER = 3.0
 
 # Quick sweep (fewer combinations)
 ATR_PERIODS_QUICK = [7, 10, 14]
@@ -86,7 +91,8 @@ KAMA_SLOW_QUICK = [30]
 JMA_PERIODS_QUICK = [7, 14]
 JMA_PHASES_QUICK = [0, 50]
 JMA_POWERS_QUICK = [2]
-MIN_HOLD_BARS_QUICK = [4, 6, 8]
+MIN_HOLD_BARS_QUICK = [5, 7, 10]
+USE_HTF_FILTER_QUICK = [True]  # Only test with HTF in quick mode
 
 # Backtest settings
 INITIAL_CAPITAL = 10_000.0  # Per symbol backtest
@@ -333,6 +339,55 @@ def fetch_daily_data(symbol: str, years: int = 2) -> Optional[pd.DataFrame]:
         return None
 
 
+def fetch_weekly_data(symbol: str, years: int = 2) -> Optional[pd.DataFrame]:
+    """Fetch weekly OHLCV data from Interactive Brokers for HTF filter."""
+    global _ib_connector
+
+    if _ib_connector is None or not _ib_connector.connected:
+        return None
+
+    try:
+        duration = f"{years} Y"
+        df = _ib_connector.get_ohlcv(symbol, "1 week", duration)
+
+        if df is None or df.empty:
+            return None
+
+        df.columns = [c.lower() for c in df.columns]
+        required = ['open', 'high', 'low', 'close', 'volume']
+        if not all(col in df.columns for col in required):
+            return None
+
+        df = df[required]
+
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
+
+        return df
+
+    except Exception as e:
+        return None
+
+
+def get_htf_trend(weekly_df: pd.DataFrame, date: datetime) -> int:
+    """
+    Get HTF (weekly) trend for a given date.
+    Returns: 1 = bullish, -1 = bearish, 0 = unknown
+    """
+    if weekly_df is None or len(weekly_df) < 20:
+        return 0  # Unknown, allow trade
+
+    # Calculate Supertrend on weekly data
+    weekly_df = calculate_supertrend(weekly_df, HTF_ATR_PERIOD, HTF_ATR_MULTIPLIER)
+
+    # Find the most recent weekly bar before the given date
+    valid_bars = weekly_df[weekly_df.index <= date]
+    if len(valid_bars) == 0:
+        return 0
+
+    return int(valid_bars.iloc[-1]['trend'])
+
+
 def split_data(df: pd.DataFrame, months_exclude: int = 1) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Split data into training (sweep) and test (out-of-sample) sets."""
     if df is None or len(df) < 100:
@@ -375,7 +430,9 @@ def run_backtest(
     min_hold_bars: int,
     initial_capital: float = INITIAL_CAPITAL,
     position_size: float = POSITION_SIZE,
-    commission: float = COMMISSION_PER_TRADE
+    commission: float = COMMISSION_PER_TRADE,
+    use_htf_filter: bool = False,
+    weekly_df: pd.DataFrame = None
 ) -> Optional[BacktestResult]:
     """
     Run backtest with given indicator and parameters.
@@ -383,6 +440,7 @@ def run_backtest(
 
     All indicators use trend crossover signals:
     - Entry: trend changes from -1 to 1 (bullish crossover)
+            + HTF filter (if enabled): weekly trend must be bullish
     - Exit: trend changes to -1 OR time-based exit
     """
     # Determine warmup period
@@ -454,16 +512,24 @@ def run_backtest(
         if position is None:
             # Long signal: trend flips from bearish to bullish
             if prev_trend == -1 and trend == 1:
-                # Calculate shares
-                shares = int(position_size / close)
-                if shares > 0 and shares * close <= capital:
-                    entry_cost = shares * close + commission
-                    capital -= entry_cost
-                    position = {
-                        'entry_price': close,
-                        'entry_idx': i,
-                        'shares': shares
-                    }
+                # Check HTF filter if enabled
+                htf_ok = True
+                if use_htf_filter and weekly_df is not None:
+                    current_date = df.index[i]
+                    htf_trend = get_htf_trend(weekly_df.copy(), current_date)
+                    htf_ok = (htf_trend >= 0)  # Allow if bullish or unknown
+
+                if htf_ok:
+                    # Calculate shares
+                    shares = int(position_size / close)
+                    if shares > 0 and shares * close <= capital:
+                        entry_cost = shares * close + commission
+                        capital -= entry_cost
+                        position = {
+                            'entry_price': close,
+                            'entry_idx': i,
+                            'shares': shares
+                        }
 
         # Update equity
         if position is not None:
@@ -572,11 +638,14 @@ def sweep_symbol(
     df: pd.DataFrame,
     indicators: List[str],
     hold_bars: List[int],
+    htf_options: List[bool],
+    weekly_df: pd.DataFrame = None,
     quick: bool = False,
     verbose: bool = False
 ) -> Optional[Dict]:
     """
     Run parameter sweep for a single symbol across all indicators.
+    Tests all combinations of indicator params, hold bars, and HTF filter.
     Returns best parameters based on profit factor and PnL.
     """
     if df is None or len(df) < 100:
@@ -594,31 +663,37 @@ def sweep_symbol(
 
         for params in param_combos:
             for hold in hold_bars:
-                result = run_backtest(df, indicator, params, hold)
-                tested += 1
+                for use_htf in htf_options:
+                    result = run_backtest(
+                        df, indicator, params, hold,
+                        use_htf_filter=use_htf,
+                        weekly_df=weekly_df
+                    )
+                    tested += 1
 
-                if result is None or result.trades < 5:
-                    continue
+                    if result is None or result.trades < 5:
+                        continue
 
-                # Score: prioritize profit factor, then PnL, penalize drawdown
-                score = (
-                    result.profit_factor * 100 +
-                    result.total_pnl_pct * 2 -
-                    result.max_drawdown_pct * 0.5
-                )
+                    # Score: prioritize profit factor, then PnL, penalize drawdown
+                    score = (
+                        result.profit_factor * 100 +
+                        result.total_pnl_pct * 2 -
+                        result.max_drawdown_pct * 0.5
+                    )
 
-                if score > best_score:
-                    best_score = score
-                    best_result = result
-                    best_indicator = indicator
-                    best_params = {
-                        'indicator': indicator,
-                        **params,
-                        'min_hold_bars': hold
-                    }
+                    if score > best_score:
+                        best_score = score
+                        best_result = result
+                        best_indicator = indicator
+                        best_params = {
+                            'indicator': indicator,
+                            **params,
+                            'min_hold_bars': hold,
+                            'use_htf_filter': use_htf
+                        }
 
         if verbose:
-            print(f"  [{symbol}] Tested {indicator}: {len(param_combos) * len(hold_bars)} combinations")
+            print(f"  [{symbol}] Tested {indicator}: {len(param_combos) * len(hold_bars) * len(htf_options)} combinations")
 
     if best_result is None:
         print(f"[{symbol}] No valid results found")
@@ -638,25 +713,27 @@ def run_sweep(
     quick: bool = False,
     verbose: bool = True
 ) -> List[Dict]:
-    """Run parameter sweep for all symbols across all indicators."""
+    """Run parameter sweep for all symbols across all indicators with HTF filter."""
 
     # Default to all indicators
     if indicators is None:
         indicators = INDICATORS
 
-    # Select hold bars
+    # Select hold bars and HTF options
     hold_bars = MIN_HOLD_BARS_QUICK if quick else MIN_HOLD_BARS
+    htf_options = USE_HTF_FILTER_QUICK if quick else USE_HTF_FILTER
 
     # Count total combinations
     total_combos = 0
     for ind in indicators:
         combos = get_param_combinations(ind, quick)
-        total_combos += len(combos) * len(hold_bars)
+        total_combos += len(combos) * len(hold_bars) * len(htf_options)
 
     print("Running", "QUICK" if quick else "FULL", "sweep")
     print(f"Indicators: {', '.join(indicators)}")
     print(f"Parameter combinations per symbol: {total_combos}")
     print(f"Hold Bars (days): {hold_bars}")
+    print(f"HTF Filter options: {htf_options}")
     print(f"\nSymbols to sweep: {len(symbols)}")
     print("="*60)
 
@@ -665,10 +742,15 @@ def run_sweep(
     for idx, symbol in enumerate(symbols, 1):
         print(f"\n[{idx}/{len(symbols)}] Processing {symbol}...")
 
-        # Fetch data
+        # Fetch daily data
         df = fetch_daily_data(symbol, years=YEARS_OF_DATA)
         if df is None:
             continue
+
+        # Fetch weekly data for HTF filter
+        weekly_df = fetch_weekly_data(symbol, years=YEARS_OF_DATA)
+        if weekly_df is not None:
+            print(f"  Weekly data: {len(weekly_df)} bars")
 
         # Split into train/test
         train_df, test_df = split_data(df, months_exclude=MONTHS_TO_EXCLUDE)
@@ -676,12 +758,13 @@ def run_sweep(
             print(f"  Insufficient training data for {symbol}")
             continue
 
-        print(f"  Data: {len(df)} days total, {len(train_df)} train, {len(test_df)} test")
+        print(f"  Data: {len(df)} days total, {len(train_df)} train, {len(test_df) if test_df is not None else 0} test")
 
         # Run sweep on training data
         sweep_result = sweep_symbol(
             symbol, train_df,
-            indicators, hold_bars,
+            indicators, hold_bars, htf_options,
+            weekly_df=weekly_df,
             quick=quick, verbose=verbose
         )
 
@@ -692,15 +775,18 @@ def run_sweep(
         params = sweep_result['params']
         indicator = sweep_result['indicator']
 
-        # Extract indicator-specific params (without 'indicator' and 'min_hold_bars')
-        ind_params = {k: v for k, v in params.items() if k not in ['indicator', 'min_hold_bars']}
+        # Extract indicator-specific params
+        ind_params = {k: v for k, v in params.items() if k not in ['indicator', 'min_hold_bars', 'use_htf_filter']}
+        use_htf = params.get('use_htf_filter', False)
 
         test_result = run_backtest(
             test_df,
             indicator,
             ind_params,
-            params['min_hold_bars']
-        )
+            params['min_hold_bars'],
+            use_htf_filter=use_htf,
+            weekly_df=weekly_df
+        ) if test_df is not None and len(test_df) > 20 else None
 
         sweep_result['test_result'] = test_result
         results.append(sweep_result)
@@ -725,14 +811,16 @@ def run_sweep(
 
 def format_params(indicator: str, params: Dict) -> str:
     """Format parameters for display."""
+    htf_str = ", HTF=ON" if params.get('use_htf_filter', False) else ", HTF=OFF"
+
     if indicator == 'supertrend':
-        return f"Period={params.get('period')}, Mult={params.get('multiplier')}, Hold={params.get('min_hold_bars')}d"
+        return f"Period={params.get('period')}, Mult={params.get('multiplier')}, Hold={params.get('min_hold_bars')}d{htf_str}"
     elif indicator == 'ema':
-        return f"Fast={params.get('fast_period')}, Slow={params.get('slow_period')}, Hold={params.get('min_hold_bars')}d"
+        return f"Fast={params.get('fast_period')}, Slow={params.get('slow_period')}, Hold={params.get('min_hold_bars')}d{htf_str}"
     elif indicator == 'kama':
-        return f"Period={params.get('period')}, Fast={params.get('fast')}, Slow={params.get('slow')}, Hold={params.get('min_hold_bars')}d"
+        return f"Period={params.get('period')}, Fast={params.get('fast')}, Slow={params.get('slow')}, Hold={params.get('min_hold_bars')}d{htf_str}"
     elif indicator == 'jma':
-        return f"Period={params.get('period')}, Phase={params.get('phase')}, Power={params.get('power')}, Hold={params.get('min_hold_bars')}d"
+        return f"Period={params.get('period')}, Phase={params.get('phase')}, Power={params.get('power')}, Hold={params.get('min_hold_bars')}d{htf_str}"
     return str(params)
 
 
@@ -750,13 +838,15 @@ def save_results(results: List[Dict], output_path: str):
         indicator = r.get('indicator', 'supertrend')
 
         # Build row with indicator-specific params
+        use_htf = params.get('use_htf_filter', False)
         row = {
             'Symbol': r['symbol'],
             'Direction': 'Long',
             'Indicator': indicator,
             'IndicatorDisplay': indicator.upper(),
             'MinHoldBars': params.get('min_hold_bars', 5),
-            'HTF': '1d',
+            'UseHTF': 'Yes' if use_htf else 'No',
+            'HTF': '1w' if use_htf else '-',
             'FinalEquity': str(round(train.final_equity, 2)).replace('.', ','),
             'Trades': train.trades,
             'WinRate': str(round(train.win_rate / 100, 2)).replace('.', ','),
